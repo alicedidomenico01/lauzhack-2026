@@ -1,161 +1,98 @@
-// Machine: real CPU and memory from the native helper, with event-loop lag as a
-// fallback when the helper is not installed.
+const INTERVAL_MS = 1000;
+const CRITICAL_FREE_PERCENT = 10;
+const WARNING_FREE_PERCENT = 20;
+const HISTORY_SIZE = 6;
+const GIB = 1024 ** 3;
 
-import { showAction } from "../ui/action-banner.js";
-
-const HOST = "com.setupcheck.host";
-const INTERVAL_MS = 2000;
-const WINDOW_MS = 600;
-const HISTORY = 6;
-
-async function nativeStats() {
-  try {
-    return await chrome.runtime.sendNativeMessage(HOST, { cmd: "stats" });
-  } catch {
-    return null;
+export function cpuLoad(previous, current) {
+  if (!previous || !current || !current.length || previous.length !== current.length) return null;
+  let total = 0;
+  let idle = 0;
+  for (let i = 0; i < current.length; i++) {
+    const elapsed = current[i].usage.total - previous[i].usage.total;
+    const idleElapsed = current[i].usage.idle - previous[i].usage.idle;
+    if (!Number.isFinite(elapsed) || !Number.isFinite(idleElapsed) ||
+        elapsed < 0 || idleElapsed < 0 || idleElapsed > elapsed) return null;
+    total += elapsed;
+    idle += idleElapsed;
   }
-}
-
-async function measureLag(ms) {
-  const drifts = [];
-  let last = performance.now();
-  const end = last + ms;
-
-  while (performance.now() < end) {
-    await new Promise((r) => setTimeout(r, 100));
-    const now = performance.now();
-    drifts.push(Math.max(0, now - last - 100));
-    last = now;
-  }
-
-  return drifts.length ? drifts.reduce((a, b) => a + b, 0) / drifts.length : 0;
+  return total > 0 ? (1 - idle / total) * 100 : null;
 }
 
 export function mountMemory(root, { setStatus }) {
   root.innerHTML = `
-    <div class="metrics">
-      <div><dt>CPU</dt><dd data-cpu>—</dd></div>
-      <div><dt>Memory free</dt><dd data-mem>—</dd></div>
-      <div><dt>Top process</dt><dd data-top>—</dd></div>
-      <div><dt>UI lag</dt><dd data-lag>—</dd></div>
-    </div>
+    <dl class="metrics">
+      <div><dt>CPU usage</dt><dd data-cpu>—</dd></div>
+      <div><dt>Available memory</dt><dd data-mem>—</dd></div>
+    </dl>
     <p class="verdict" data-verdict>Measuring…</p>
   `;
 
-  const ui = {
-    cpu: root.querySelector("[data-cpu]"),
-    mem: root.querySelector("[data-mem]"),
-    top: root.querySelector("[data-top]"),
-    lag: root.querySelector("[data-lag]"),
-    verdict: root.querySelector("[data-verdict]"),
-  };
-
-  const history = [];
+  const cpuValue = root.querySelector("[data-cpu]");
+  const memoryValue = root.querySelector("[data-mem]");
+  const verdict = root.querySelector("[data-verdict]");
+  let previousCpu = null;
+  let memoryHistory = [];
   let timer = 0;
-  let running = false;
-  let actionShown = false;
-  let topName = null;
+  let generation = 0;
 
-  async function cycle() {
-    if (running) return;
-    running = true;
+  function report(level, text) {
+    verdict.className = `verdict ${level}`;
+    verdict.textContent = text;
+    setStatus("memory", level, text);
+  }
 
-    const stats = await nativeStats();
-    const lag = await measureLag(WINDOW_MS);
-    running = false;
+  async function cycle(run) {
+    const [cpuInfo, memoryInfo] = await Promise.allSettled([
+      Promise.resolve().then(() => chrome.system.cpu.getInfo()),
+      Promise.resolve().then(() => chrome.system.memory.getInfo()),
+    ]);
+    if (run !== generation) return;
 
-    history.push(lag);
-    if (history.length > HISTORY) history.shift();
+    const processors = cpuInfo.value?.processors;
+    const cpu = cpuLoad(previousCpu, processors);
+    previousCpu = processors;
+    const { availableCapacity, capacity } = memoryInfo.value ?? {};
+    const free = capacity > 0 && availableCapacity >= 0 && availableCapacity <= capacity
+      ? availableCapacity / capacity * 100
+      : null;
 
-    const first = history[0];
-    const last = history[history.length - 1];
-    const rising = history.length >= 4 && last - first > 25 && last > 40;
+    cpuValue.textContent = cpu === null
+      ? (processors ? "Sampling…" : "Unavailable")
+      : `${cpu.toFixed(0)}%`;
+    memoryValue.textContent = free === null
+      ? "Unavailable"
+      : `${(availableCapacity / GIB).toFixed(1)} GiB (${free.toFixed(0)}%)`;
 
-    ui.lag.textContent = `${lag.toFixed(0)} ms/s`;
+    if (free === null) memoryHistory = [];
+    else memoryHistory = [...memoryHistory, free].slice(-HISTORY_SIZE);
+    const dropping = memoryHistory.length === HISTORY_SIZE &&
+      free < WARNING_FREE_PERCENT && memoryHistory[0] - free >= 5;
 
-    let level;
-    let text;
+    if (free !== null && free < CRITICAL_FREE_PERCENT) report("bad", "Very little memory available.");
+    else if (cpu !== null && cpu >= 90) report("bad", "CPU usage is high.");
+    else if (dropping) report("warn", "Available memory is low and falling.");
+    else if (free !== null && free < WARNING_FREE_PERCENT) report("warn", "Available memory is low.");
+    else if (cpu !== null && cpu >= 75) report("warn", "CPU is busy.");
+    else if (!processors || free === null) report("warn", "System readings are incomplete.");
+    else if (cpu === null) report("busy", "Measuring CPU usage…");
+    else report("ok", "CPU and available memory look normal.");
 
-    if (stats && typeof stats.cpu_percent === "number") {
-      const cpu = stats.cpu_percent;
-      const memFree = stats.memory_free_percent;
-      topName = stats.top || null;
-
-      ui.cpu.textContent = `${cpu.toFixed(0)}%`;
-      ui.mem.textContent = memFree === null ? "—" : `${memFree}%`;
-      ui.top.textContent = stats.top
-        ? `${stats.top} ${stats.top_cpu ?? ""}%`.trim()
-        : "—";
-
-      const memLow = typeof memFree === "number" && memFree < 12;
-      level = cpu > 85 || memLow ? "bad" : cpu > 60 || rising ? "warn" : "ok";
-      text =
-        level === "bad"
-          ? memLow
-            ? "Memory is nearly full. Everything will start swapping."
-            : "CPU is saturated. Calls freeze, typing lags."
-          : level === "warn"
-            ? rising
-              ? "Load is climbing in the background."
-              : "Busy, but still usable."
-            : "Nothing is starving the machine.";
-    } else {
-      // No helper: lag is all we have, and we say so by leaving the fields empty.
-      ui.cpu.textContent = "—";
-      ui.mem.textContent = "—";
-      ui.top.textContent = "helper off";
-      level = last > 80 ? "bad" : last > 30 || rising ? "warn" : "ok";
-      text =
-        level === "bad"
-          ? "The browser is blocked. Something is starving the machine."
-          : level === "warn"
-            ? "Mild stutter. Something is competing for the CPU."
-            : "Responsive. Nothing is starving the machine.";
-    }
-
-    ui.verdict.className = `verdict ${level}`;
-    ui.verdict.textContent = text;
-    setStatus("memory", level, level === "ok" ? "ok" : "attention");
-
-    if (level === "bad" && !actionShown) {
-      actionShown = true;
-      setStatus("memory", "busy", "acting");
-      showAction({
-        title: "Fixing remotely…",
-        detail: topName
-          ? `Simulated remote action: restart ${topName}. Cancel within 3 s.`
-          : "Simulated remote action: restart the busiest process. Cancel within 3 s.",
-        seconds: 3,
-        onApply: () => {
-          ui.verdict.className = "verdict ok";
-          ui.verdict.textContent =
-            "Action applied (simulated). A Nexthink remote action would do this for real.";
-          setStatus("memory", "ok", "fixed");
-          setTimeout(() => {
-            actionShown = false;
-          }, 20000);
-        },
-        onCancel: () => {
-          ui.verdict.className = "verdict warn";
-          ui.verdict.textContent = "Cancelled. Nothing was applied.";
-          setStatus("memory", "warn", "cancelled");
-          setTimeout(() => {
-            actionShown = false;
-          }, 10000);
-        },
-      });
-    }
+    timer = setTimeout(() => cycle(run), INTERVAL_MS);
   }
 
   return {
     start() {
-      if (timer) return;
-      cycle();
-      timer = setInterval(cycle, INTERVAL_MS);
+      if (generation % 2 !== 0) return;
+      previousCpu = null;
+      memoryHistory = [];
+      report("busy", "Measuring…");
+      cycle(++generation);
     },
     stop() {
-      clearInterval(timer);
-      timer = 0;
+      if (generation % 2 === 0) return;
+      generation++;
+      clearTimeout(timer);
     },
   };
 }

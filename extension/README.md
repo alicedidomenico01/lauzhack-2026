@@ -38,30 +38,25 @@ new file and one line in `app.js`.
 
 ## Behaviour
 
-- **Network** probes latency every 500 ms and measures real download speed
-  every 12 s (1 MB from a CORS-enabled endpoint, smoothed across samples). The
-  ring is centred, shows the speed inside it, and fills on a square-root scale
-  up to 25 Mb/s; colours: **≥8 Mb/s green**, **≥2 amber**, below that red. The
-  connection type sits under the verdict. When red, **Switch Network** appears:
-  Chrome cannot switch Wi-Fi, so you change it in the OS and the button
-  disappears as soon as the connection signature changes, leaving a live
-  **±Mb/s** badge against the speed you had before. The small icon top-right of
-  the ring toggles a **demo mode** that fakes a shaky connection (and resets
-  everything when turned off). Everything else lives behind **Details**.
-
-  The SSID (e.g. `freewifi-epfl`) is **not** available to a browser — it needs
-  the native helper described below.
+- **Network** attempts a latency probe every 500 ms and measures download
+  throughput from Cloudflare every second when no test is already in flight.
+  This measures the current Internet path to a test server, not Wi-Fi signal
+  strength or Meet call quality. **Switch Network** saves the current reading;
+  switch in the OS, then use **Retest after switching Wi-Fi**. If the helper
+  reports a changed Wi-Fi name, the retest starts automatically. The badge
+  compares actual readings. The demo toggle is explicitly labeled and never
+  feeds the live comparison. Without a reported SSID, the panel shows
+  **Wi-Fi name unavailable**.
 - **Microphone** opens on panel start, shows a live meter, and decides by
   itself: sound within the last 3 s = ok, 12 s of silence = it switches to the
   other input once and reports which one works.
 - **Camera** starts on its own **only if camera permission already exists**;
   otherwise it starts when you first open the section (first use always needs a
   prompt). Live preview, verdict recomputed every 700 ms.
-- **Memory** shows **real CPU load, free memory and the top CPU process** from
-  the native helper, plus event-loop lag. Without the helper it falls back to
-  lag only and leaves the fields empty rather than inventing numbers. When load
-  is bad, a **"Fixing remotely…"** banner names the actual top process, with a
-  3 s countdown and Cancel.
+- **Memory** uses Chrome's `system.cpu` and `system.memory` extension APIs.
+  It shows system-wide CPU utilization (after two samples) and available
+  memory without a native helper. It warns on high load or low available
+  memory. These APIs do not identify individual processes.
 - Everything stops when the panel is hidden, so the mic and camera LEDs are
   honest.
 
@@ -92,14 +87,13 @@ cd extension/native
 
 That writes
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.setupcheck.host.json`
-and points it at `host.py` (stdlib only, no dependencies). Reload the extension;
-the panel then shows `freewifi-epfl` instead of `Wi-Fi · 4G`, refreshed every 5 s.
+and points it at `host.py` (Python 3, no external packages). Reload the
+extension. It asks the helper for the Wi-Fi name every 5 s.
 
 `host.py` tries `networksetup -getairportnetwork`, then
-`system_profiler SPAirPortDataType -json`. macOS may return `<redacted>` unless
-Location Services is allowed for the terminal that launched Chrome — that is an
-OS rule, not a bug in the helper. Without the helper the panel silently falls
-back to the connection type, so nothing breaks.
+`system_profiler SPAirPortDataType -json`. Whether macOS returns a Wi-Fi name
+depends on the OS version, connection, and location privacy settings. If no
+real name comes back, the extension does not substitute one.
 
 
 
@@ -110,7 +104,7 @@ back to the connection type, so nothing breaks.
 | Network | RTT, jitter, failures, `navigator.connection` | **Other networks around you.** No browser API enumerates Wi-Fi or binds a request to another interface — a worker thread does not help, it is a permission boundary, not a concurrency one |
 | Microphone | `getUserMedia` + AudioContext RMS | Change the device Meet uses |
 | Camera | one frame every 700 ms → luminance, centre/edge ratio | Change your lighting |
-| Memory | CPU %, free memory, top process (native helper); lag as fallback | Nothing without the helper |
+| Memory | System-wide CPU usage and available memory via Chrome extension APIs | Per-process attribution and OS-level fixes |
 
 The honest fix for the two "cannot" rows is a **native messaging host** — a
 small local binary that runs `networkQuality -c` (built into macOS), CoreWLAN
