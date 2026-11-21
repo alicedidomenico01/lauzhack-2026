@@ -236,7 +236,7 @@ export function mountNetwork(root, { setStatus }) {
       const text = speedUnavailable ? "Speed test unavailable. Retrying…" : "Measuring download speed…";
       ui.verdict.className = speedUnavailable ? "verdict warn" : "verdict";
       ui.verdict.textContent = text;
-      setStatus("network", speedUnavailable ? "warn" : "busy", text);
+      setStatus(speedUnavailable ? "warn" : "busy", text);
       return;
     }
 
@@ -256,7 +256,7 @@ export function mountNetwork(root, { setStatus }) {
             ? "Low download speed."
             : "Very low download speed.";
 
-    setStatus("network", level, level === "ok" ? "ok" : "attention");
+    setStatus(level, level === "ok" ? "ok" : "attention");
 
     ui.switchBtn.hidden = demo || switchConfirmed || (level !== "bad" && baseline === null);
     ui.switchBtn.textContent = baseline === null ? "Switch Network" : "Retest after switching Wi-Fi";

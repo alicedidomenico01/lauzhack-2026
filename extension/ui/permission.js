@@ -3,6 +3,9 @@
 // permissions are per extension origin, so the panel inherits them.
 
 export function permissionHelp(root, kind) {
+  // start() runs again every time the panel comes back: show the help once.
+  root.querySelectorAll(".perm-help").forEach((n) => n.remove());
+
   const box = document.createElement("div");
   box.className = "perm-help";
 

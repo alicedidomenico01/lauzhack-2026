@@ -39,7 +39,7 @@ export function mountMemory(root, { setStatus }) {
   function report(level, text) {
     verdict.className = `verdict ${level}`;
     verdict.textContent = text;
-    setStatus("memory", level, text);
+    setStatus(level, text);
   }
 
   async function cycle(run) {

@@ -25,15 +25,18 @@ extension/
   ui/
     accordion.js         open/close + status pill
     ring.js              circular gauge
+  lib/
+    media.js             real devices (no "default" duplicates) + getUserMedia errors explained
   integrations/
     network.js           continuous RTT/jitter/failure sampling
-    audio.js             live mic meter + automatic verdict
-    camera.js            live preview + exposure/backlight analysis
+    audio.js             live mic meter: dead / live / too quiet / clipping / noisy
+    camera.js            live preview: black / frozen / still image / exposure / fps
     memory.js            device class + event-loop lag
 ```
 
 Each integration exports `mountX(root, { setStatus })` and returns
-`{ start(), stop() }`. It builds its own DOM, so adding a fifth check means one
+`{ start(), stop() }`. `setStatus(level, text)` takes no section key: the
+wrapper in `app.js` adds it. It builds its own DOM, so adding a fifth check means one
 new file and one line in `app.js`.
 
 ## Behaviour
@@ -47,12 +50,30 @@ new file and one line in `app.js`.
   compares actual readings. The demo toggle is explicitly labeled and never
   feeds the live comparison. Without a reported SSID, the panel shows
   **Wi-Fi name unavailable**.
-- **Microphone** opens on panel start, shows a live meter, and decides by
-  itself: sound within the last 3 s = ok, 12 s of silence = it switches to the
-  other input once and reports which one works.
+- **Microphone** opens on panel start with raw audio (no echo cancellation,
+  noise suppression or auto gain, which would hide what we measure). It tells
+  apart, mostly without the user speaking:
+  - **dead**: 2 s of digital silence, not even room noise (muted, input volume
+    at 0, broken). It then tests every other *physical* input, real devices
+    before virtual ones, and says which one works. If all are dead it blames
+    the computer, not the mic, and goes back to the default so a fix shows live.
+  - **live**: it hears the room, so the mic works; it asks for a few words.
+  - once it hears a voice: **too quiet** (peak under -48 dBFS), **clipping**,
+    **noisy room** (noise floor over -45 dBFS), or **ok**. A voice stays
+    confirmed, so going quiet later does not flip it to "no sound".
+  - Plugging in a headset changes the system default; the check follows it,
+    because that is the device Meet uses. A device you pick by hand is kept.
 - **Camera** starts on its own **only if camera permission already exists**;
   otherwise it starts when you first open the section (first use always needs a
-  prompt). Live preview, verdict recomputed every 700 ms.
+  prompt). Frames come from the track itself (`MediaStreamTrackProcessor`), so
+  the frame rate is real even when the section is collapsed. It reports, in
+  order: unplugged, paused by the system, **frozen** (no new frame for 2.5 s),
+  **black** (shutter closed, lens covered), **still image** (five identical
+  frames: a virtual camera placeholder), too dark, washed out, backlit,
+  **choppy** (under 15 fps), or ok. A verdict must hold for two samples before
+  it changes, so it does not flicker. Virtual cameras (OBS, Snap…) are labelled.
+- Both explain *why* a device will not open: blocked by Chrome, blocked by the
+  OS privacy settings, not found, or held by another app.
 - **Memory** uses Chrome's `system.cpu` and `system.memory` extension APIs.
   It shows system-wide CPU utilization (after two samples) and available
   memory without a native helper. It warns on high load or low available
