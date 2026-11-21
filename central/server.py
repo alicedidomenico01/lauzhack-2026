@@ -482,15 +482,24 @@ def seed_fleet(db, devices=180, days=14, per_device_day=0.45, rng_seed=7):
         dept = weighted(rng, DEPARTMENTS)
         fleet.append((f"fleet-{i:04d}", f"{dept[:3].upper()}-MBP-{100 + i}", dept))
     now = time.time()
+
+    # Not every day looks the same: a weekly shape, one bad day, per-day noise.
+    weekday_shape = [0.95, 1.18, 1.04, 1.0, 1.12, 0.14, 0.09]  # Mon..Sun
+    spike_day = rng.randrange(days)
+    day_weights = []
+    for d in range(days):
+        stamp = time.localtime(now - d * DAY)
+        day_weights.append(
+            weekday_shape[stamp.tm_wday] * rng.uniform(0.55, 1.6) * (2.1 if d == spike_day else 1.0)
+        )
+
     rows = []
     for dev_id, name, dept in fleet:
         n = int(rng.expovariate(1 / (per_device_day * days)))
         for _ in range(min(n, 40)):
-            day = rng.randint(0, days - 1)
+            day = rng.choices(range(days), weights=day_weights, k=1)[0]
             base = time.localtime(now - day * DAY)
-            if base.tm_wday >= 5 and rng.random() < 0.85:
-                continue  # weekends are quiet
-            hour = int(min(18, max(8, rng.gauss(11.5, 2.6))))
+            hour = int(min(19, max(7, rng.gauss(11.5 + rng.uniform(-1.4, 1.4), 2.4))))
             # Failures surface when people join calls: a peak just before the hour.
             minute = rng.randint(52, 59) if rng.random() < 0.38 else rng.randint(0, 59)
             t = time.mktime((base.tm_year, base.tm_mon, base.tm_mday, hour, minute, rng.randint(0, 59), 0, 0, -1))

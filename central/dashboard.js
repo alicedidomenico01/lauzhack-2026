@@ -192,10 +192,12 @@ function renderCompany() {
   for (const day of days) {
     const total = Object.values(day.sections).reduce((a, b) => a + b, 0);
     const col = el("div", "col");
+    const area = el("div", "bar-area");
     const bar = el("i");
     bar.style.height = `${Math.max(2, Math.round((total / peak) * 100))}%`;
     bar.title = `${day.day}: ${total}`;
-    col.append(bar, el("span", "", day.day));
+    area.append(bar);
+    col.append(area, el("span", "", day.day));
     trend.append(col);
   }
 
