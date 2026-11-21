@@ -43,31 +43,31 @@ DAY = 86400
 DEFAULT_POLICIES = [
     {"id": "network.slow", "section": "network", "label": "Slow or no connection",
      "action": "Suggest a better network (no action is applied)", "mode": "suggest", "seconds": 3,
-     "execution": "simulated", "params": {"targetNetwork": "eduroam"}, "minutes_saved": 12},
+     "execution": "simulated", "params": {}, "minutes_saved": 12, "ref": ""},
     {"id": "audio.dead", "section": "audio", "label": "Microphone sends no sound",
      "action": "Restore the microphone", "mode": "auto", "seconds": 3,
-     "execution": "real", "params": {"inputVolume": 75}, "minutes_saved": 15},
+     "execution": "real", "params": {"inputVolume": 75}, "minutes_saved": 15, "ref": ""},
     {"id": "audio.wrongdefault", "section": "audio", "label": "System microphone is dead, another one works",
      "action": "Make the working microphone the system default", "mode": "auto", "seconds": 3,
-     "execution": "real", "params": {}, "minutes_saved": 15},
+     "execution": "real", "params": {}, "minutes_saved": 15, "ref": ""},
     {"id": "audio.quiet", "section": "audio", "label": "Voice too quiet",
      "action": "Raise the microphone input volume", "mode": "ask", "seconds": 3,
-     "execution": "real", "params": {"step": 20}, "minutes_saved": 5},
+     "execution": "real", "params": {"step": 20}, "minutes_saved": 5, "ref": ""},
     {"id": "audio.clipping", "section": "audio", "label": "Voice distorted (clipping)",
      "action": "Lower the microphone input volume", "mode": "ask", "seconds": 3,
-     "execution": "real", "params": {"step": 20}, "minutes_saved": 5},
+     "execution": "real", "params": {"step": 20}, "minutes_saved": 5, "ref": ""},
     {"id": "camera.frozen", "section": "camera", "label": "Camera frozen",
      "action": "Restart the camera", "mode": "auto", "seconds": 3,
-     "execution": "real", "params": {}, "minutes_saved": 10},
+     "execution": "real", "params": {}, "minutes_saved": 10, "ref": ""},
     {"id": "camera.black", "section": "camera", "label": "Camera shows a black image",
      "action": "None (shutter or cover: the employee fixes it)", "mode": "off", "seconds": 3,
-     "execution": "simulated", "params": {}, "minutes_saved": 0},
+     "execution": "simulated", "params": {}, "minutes_saved": 0, "ref": ""},
     {"id": "memory.cpu", "section": "memory", "label": "CPU overloaded",
      "action": "Quit the app using the most CPU", "mode": "auto", "seconds": 3,
-     "execution": "simulated", "params": {}, "minutes_saved": 8},
+     "execution": "simulated", "params": {}, "minutes_saved": 8, "ref": ""},
     {"id": "memory.lowmem", "section": "memory", "label": "Memory almost full",
      "action": "Quit the app using the most memory", "mode": "ask", "seconds": 3,
-     "execution": "simulated", "params": {}, "minutes_saved": 8},
+     "execution": "simulated", "params": {}, "minutes_saved": 8, "ref": ""},
 ]
 
 MODES = {"auto", "ask", "off", "suggest"}
@@ -206,7 +206,7 @@ def get_policies(db):
     for base in DEFAULT_POLICIES:
         p = json.loads(json.dumps(base))
         p.update({k: v for k, v in stored.get(p["id"], {}).items()
-                  if k in ("mode", "seconds", "execution", "params")})
+                  if k in ("mode", "seconds", "execution", "params", "ref")})
         out.append(p)
     return out
 
@@ -229,7 +229,9 @@ def save_policies(db, updates):
         params = p.get("params", current[pid]["params"])
         if not isinstance(params, dict):
             raise ValueError("params must be an object")
+        ref = p.get("ref", current[pid].get("ref", ""))
         stored[pid] = {"mode": mode, "execution": execution, "seconds": seconds,
+                       "ref": clean_text(ref, 120) or "",
                        "params": {k: v for k, v in params.items() if isinstance(v, (str, int, float))}}
     db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('policies', ?)", (json.dumps(stored),))
     db.commit()

@@ -306,16 +306,13 @@ export function mountNetwork(root, api) {
       suggestOnly: true,
       diagnostics,
       title: !speed ? "No connection" : `Very slow connection (${shown.value} ${shown.unit})`,
-      suggestion: (p) =>
-        `This connection is too slow for a call. Switching to ${
-          p.params.targetNetwork || "another network"
-        } would probably fix it. Do it from the Wi-Fi menu.`,
+      suggestion: () =>
+        "This connection is too slow for a call. Switching to another network would probably fix it. Do it from the Wi-Fi menu.",
       action: {
         title: "Switch to a better Wi-Fi network",
-        detail: (p) =>
-          `Moves this laptop from ${from} to ${p.params.targetNetwork || "a known network"}${p.execution === "real" ? "" : " (simulated)"}.`,
+        detail: () => `Moves this laptop from ${from} to another network.`,
         async run(p) {
-          const to = p.params.targetNetwork || "eduroam";
+          const to = p.params.targetNetwork || "";
           const before = speed;
           let real = false;
           if (p.execution === "real" && !demo) {

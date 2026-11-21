@@ -374,7 +374,7 @@ function renderPolicies() {
   table.replaceChildren();
   const head = el("thead");
   const headRow = el("tr");
-  ["Failure", "Action", "Mode", "Seconds", "Execution", "Params"].forEach((h) =>
+  ["Failure", "Action", "Mode", "Execution", "Reference", "Params"].forEach((h) =>
     headRow.append(el("th", "", h))
   );
   head.append(headRow);
@@ -399,18 +399,17 @@ function renderPolicies() {
     mode.value = policy.mode;
     mode.dataset.field = "mode";
 
-    const seconds = el("input");
-    seconds.type = "number";
-    seconds.min = "1";
-    seconds.max = "30";
-    seconds.value = policy.seconds;
-    seconds.dataset.field = "seconds";
-    seconds.style.width = "70px";
+    // Execution belongs to the action, it is not a setting: shown, not editable.
+    const execution = el("td", "");
+    const execLevel = policy.execution === "real" ? "ok" : "neutral";
+    execution.append(el("span", `badge ${execLevel}`, policy.execution));
 
-    const execution = el("select");
-    ["real", "simulated"].forEach((value) => execution.append(new Option(value, value)));
-    execution.value = policy.execution;
-    execution.dataset.field = "execution";
+    const ref = el("input");
+    ref.type = "text";
+    ref.value = policy.ref || "";
+    ref.placeholder = "runbook, queue, internal id";
+    ref.dataset.field = "ref";
+    ref.style.width = "100%";
 
     const params = el("td", "");
     for (const [key, value] of Object.entries(policy.params || {})) {
@@ -424,21 +423,9 @@ function renderPolicies() {
       params.append(input);
     }
 
-    tr.append(failure, el("td", "", policy.action || "-"), el("td", ""), el("td", ""), el("td", ""), params);
+    tr.append(failure, el("td", "", policy.action || "-"), el("td", ""), execution, el("td", ""), params);
     tr.children[2].append(mode);
-    tr.children[3].append(seconds);
-    tr.children[4].append(execution);
-
-    // "Suggest only" and "Report only" have nothing to time and nothing to run.
-    const syncRow = () => {
-      const quiet = mode.value === "off" || mode.value === "suggest";
-      seconds.disabled = quiet;
-      execution.disabled = quiet;
-      tr.classList.toggle("muted-row", quiet);
-    };
-    mode.addEventListener("change", syncRow);
-    syncRow();
-
+    tr.children[4].append(ref);
     body.append(tr);
   }
   table.append(body);
@@ -545,8 +532,7 @@ $("save").addEventListener("click", async () => {
     updates.push({
       id: row.dataset.id,
       mode: row.querySelector('[data-field="mode"]').value,
-      seconds: Number(row.querySelector('[data-field="seconds"]').value),
-      execution: row.querySelector('[data-field="execution"]').value,
+      ref: row.querySelector('[data-field="ref"]').value,
       params,
     });
   }

@@ -14,7 +14,7 @@ const OUTBOX_MAX = 300;
 // Same as central/server.py DEFAULT_POLICIES (only what the device needs),
 // used until the server has answered once.
 const DEFAULT_POLICIES = {
-  "network.slow": { mode: "auto", seconds: 3, execution: "simulated", params: { targetNetwork: "eduroam" } },
+  "network.slow": { mode: "suggest", seconds: 3, execution: "simulated", params: {} },
   "audio.dead": { mode: "auto", seconds: 3, execution: "real", params: { inputVolume: 75 } },
   "audio.wrongdefault": { mode: "auto", seconds: 3, execution: "real", params: {} },
   "audio.quiet": { mode: "ask", seconds: 3, execution: "real", params: { step: 20 } },
