@@ -39,14 +39,18 @@ new file and one line in `app.js`.
 ## Behaviour
 
 - **Network** probes latency every 500 ms and measures real download speed
-  every 12 s (500 KB from a CORS-enabled endpoint). The ring is centred, shows
-  the speed inside it, and fills at **2 Mb/s**; colour thresholds are
-  1.5 Mb/s (green) and 0.6 Mb/s (amber, below that red). Under the verdict sits
-  the connection type ("Wi-Fi · 4G"). When red, a **Switch Network** button
-  appears: Chrome cannot switch Wi-Fi, so it tells you to use the OS menu and
-  then shows a live **±% speed** badge against the speed you had before
-  switching. The small icon top-right of the ring toggles a **demo mode** that
-  fakes a shaky connection. Everything else lives behind **Details**.
+  every 12 s (1 MB from a CORS-enabled endpoint, smoothed across samples). The
+  ring is centred, shows the speed inside it, and fills on a square-root scale
+  up to 25 Mb/s; colours: **≥8 Mb/s green**, **≥2 amber**, below that red. The
+  connection type sits under the verdict. When red, **Switch Network** appears:
+  Chrome cannot switch Wi-Fi, so you change it in the OS and the button
+  disappears as soon as the connection signature changes, leaving a live
+  **±Mb/s** badge against the speed you had before. The small icon top-right of
+  the ring toggles a **demo mode** that fakes a shaky connection (and resets
+  everything when turned off). Everything else lives behind **Details**.
+
+  The SSID (e.g. `freewifi-epfl`) is **not** available to a browser — it needs
+  the native helper described below.
 - **Microphone** opens on panel start, shows a live meter, and decides by
   itself: sound within the last 3 s = ok, 12 s of silence = it switches to the
   other input once and reports which one works.

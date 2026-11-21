@@ -58,6 +58,7 @@ header h1 { margin: 0 0 12px; font-size: 16px; letter-spacing: -0.01em; }
 .row-title { font-weight: 600; }
 
 .row-dot {
+  display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -65,10 +66,10 @@ header h1 { margin: 0 0 12px; font-size: 16px; letter-spacing: -0.01em; }
   transition: background 200ms ease, box-shadow 200ms ease;
 }
 
-.row-dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(53, 200, 138, 0.12); }
-.row-dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(232, 178, 60, 0.12); }
-.row-dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(239, 95, 95, 0.12); }
-.row-dot.busy { background: var(--accent); animation: blink 1.2s infinite; }
+.row-dot[data-level="ok"] { box-shadow: 0 0 0 3px rgba(53, 200, 138, 0.14); }
+.row-dot[data-level="warn"] { box-shadow: 0 0 0 3px rgba(232, 178, 60, 0.14); }
+.row-dot[data-level="bad"] { box-shadow: 0 0 0 3px rgba(239, 95, 95, 0.14); }
+.row-dot[data-level="busy"] { animation: blink 1.2s infinite; }
 
 @keyframes blink { 50% { opacity: 0.35; } }
 
@@ -152,6 +153,9 @@ select {
 .state.live { color: var(--ok); }
 
 /* ---------- network ring ---------- */
+
+.net .verdict,
+.net .conn-name { text-align: center; }
 
 .ring-top {
   position: relative;
@@ -242,7 +246,6 @@ select {
 
 .switch-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-.switch-help { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 
 /* ---------- nested details ---------- */
 
