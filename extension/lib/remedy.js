@@ -62,6 +62,17 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
   //           verify?() -> bool | null (null = cannot tell automatically) }
   async function raise(issue, { userInitiated = false } = {}) {
     const issueId = idOf(issue.key);
+
+    // A failure triggered by hand must always produce a fresh alert. An earlier
+    // "reject" (quiet window) or a report still open must not swallow it.
+    if (issue.simulated && !userInitiated) {
+      const current = open.get(issueId);
+      if (!current || current.state === "reported" || current.banner?.decided) {
+        forget(issue.key);
+      }
+      quietUntil.delete(issueId);
+    }
+
     const existing = open.get(issueId);
     if (existing) {
       if (userInitiated) existing.banner?.applyNow();
@@ -208,7 +219,19 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     }
   }
 
+  // Drop everything we remember about an issue: the open incident and the
+  // "do not nag" window. Used when a failure is triggered again by hand.
+  function forget(key) {
+    const issueId = idOf(key);
+    const inc = open.get(issueId);
+    if (inc) {
+      if (inc.banner && !inc.banner.decided) inc.banner.dismiss();
+      open.delete(issueId);
+    }
+    quietUntil.delete(issueId);
+  }
+
   const isOpen = (key) => open.has(idOf(key));
 
-  return { raise, clear, isOpen, waitFor };
+  return { raise, clear, isOpen, waitFor, forget };
 }
