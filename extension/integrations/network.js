@@ -5,13 +5,19 @@ const PROBE_URL = "https://www.gstatic.com/generate_204";
 const SPEED_URL = "https://speed.cloudflare.com/__down";
 const HOST = "com.setupcheck.host";
 const PROBE_MS = 500;
-const SPEED_MS = 1000;
+const SPEED_MS = 2000;
 const SSID_MS = 5000;
 const WINDOW = 20;
 
 // Shown when the helper cannot report the Wi-Fi name. The panel is not claiming
 // this is the network you are on; it is the label we use on stage.
 const FALLBACK_SSID = "freewifi-epfl";
+
+const SPEED_TARGET_S = 0.15; // aim for a transfer that lasts ~150 ms
+const SPEED_MAX_BYTES = 500000;
+const SPEED_MIN_BYTES = 30000;
+const SPEED_TIMEOUT_MS = 6000;
+const SPEED_FAILS_BEFORE_UNAVAILABLE = 3;
 
 const SPEED_MAX = 25;
 const SPEED_OK = 8;
@@ -86,6 +92,7 @@ export function mountNetwork(root, api) {
   let consecutiveFails = 0;
   let speed = null;
   let speedUnavailable = false;
+  let speedFails = 0;
   let ssid = null;
   let speedEpoch = 0;
   let ssidPending = false;
@@ -156,8 +163,8 @@ export function mountNetwork(root, api) {
 
   function payloadBytes() {
     const mbps = speed && speed > 0.2 ? speed : 2;
-    const bytes = Math.round(((mbps * 1e6) / 8) * 0.2);
-    return Math.min(2000000, Math.max(40000, bytes));
+    const bytes = Math.round(((mbps * 1e6) / 8) * SPEED_TARGET_S);
+    return Math.min(SPEED_MAX_BYTES, Math.max(SPEED_MIN_BYTES, bytes));
   }
 
   async function measureSpeed() {
@@ -182,21 +189,30 @@ export function mountNetwork(root, api) {
       const t0 = performance.now();
       const res = await fetch(`${SPEED_URL}?bytes=${bytes}&n=${Math.random()}`, {
         cache: "no-store",
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(SPEED_TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = await res.arrayBuffer();
       const secs = (performance.now() - t0) / 1000;
-      if (epoch !== speedEpoch || consecutiveFails >= 3) return;
-      if (secs <= 0 || buf.byteLength !== bytes) throw new Error("Unexpected test payload");
+      if (epoch !== speedEpoch) return;
+      // Measure what actually arrived: a CDN may cap or compress the body, and
+      // an exact size check used to turn that into a fake outage.
+      if (secs <= 0 || buf.byteLength < 1024) {
+        throw new Error(`test payload too small (${buf.byteLength} B)`);
+      }
       const raw = (buf.byteLength * 8) / secs / 1e6;
       speed = speed === null || speed === 0 ? raw : speed * 0.6 + raw * 0.4;
+      speedFails = 0;
       speedUnavailable = false;
-    } catch {
-      if (epoch === speedEpoch && consecutiveFails < 3) {
+    } catch (err) {
+      if (epoch !== speedEpoch) return;
+      speedFails++;
+      // One slow sample is not an outage: keep the last reading on screen.
+      if (speedFails >= SPEED_FAILS_BEFORE_UNAVAILABLE) {
         speed = null;
         speedUnavailable = true;
       }
+      console.warn(`[setup-check] speed test ${speedFails}:`, err?.message || err);
     } finally {
       measuring = false;
       if (epoch === speedEpoch) render();
@@ -222,7 +238,9 @@ export function mountNetwork(root, api) {
 
     if (value0 === null) {
       ring.set(0, "-", "Mb/s", COLORS.bad);
-      const text = speedUnavailable ? "Speed test unavailable. Retrying…" : "Measuring download speed…";
+      const text = speedUnavailable
+        ? "Speed test unavailable. Retrying…"
+        : "Measuring download speed…";
       ui.verdict.className = speedUnavailable ? "verdict warn" : "verdict";
       ui.verdict.textContent = text;
       setStatus(speedUnavailable ? "warn" : "busy", text);
@@ -269,6 +287,7 @@ export function mountNetwork(root, api) {
     consecutiveFails = 0;
     speed = null;
     speedUnavailable = false;
+    speedFails = 0;
     speedEpoch++;
   }
 
@@ -347,6 +366,7 @@ export function mountNetwork(root, api) {
       consecutiveFails = 0;
       speed = null;
       speedUnavailable = false;
+      speedFails = 0;
       speedEpoch++;
       ssid = null;
 

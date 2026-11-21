@@ -36,10 +36,11 @@ exposes `{ start(), stop() }`. `extension/app.js` only wires them.
 
 ### Network
 
-- A latency probe every 500 ms, and a real download from Cloudflare every second
-  when no transfer is already running. The test payload is sized to last about
-  200 ms at the current speed (40 KB to 2 MB), so measuring does not eat the
-  bandwidth it measures.
+- A latency probe every 500 ms, and a real download from Cloudflare every two
+  seconds when no transfer is already running. The test payload is sized to last
+  about 150 ms at the current speed (30 KB to 500 KB), so measuring does not eat
+  the bandwidth it measures. A single failed sample keeps the last reading on
+  screen; only three in a row report the test as unavailable.
 - The ring fills on a square-root scale up to 25 Mb/s; green at 8 Mb/s, amber at
   2, red below. Details (latency, jitter, lost probes, Chrome's own estimate)
   sit behind the disclosure.
