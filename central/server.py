@@ -73,7 +73,7 @@ DEFAULT_POLICIES = [
 MODES = {"auto", "ask", "off", "suggest"}
 EXECUTIONS = {"real", "simulated"}
 STATUSES = {"detected", "proposed", "applying", "fixed", "applied", "escalated",
-            "rejected", "failed", "reported", "resolved", "interrupted"}
+            "rejected", "failed", "reported", "resolved", "interrupted", "no_action"}
 STALE_S = 120  # proposed/applying for longer than this: the panel was closed mid-action
 
 lock = threading.Lock()
@@ -507,8 +507,8 @@ def seed_fleet(db, devices=180, days=14, per_device_day=0.45, rng_seed=7):
                 continue
             issue = weighted(rng, ISSUE_WEIGHTS)
             pol = policies[issue]
-            if pol["mode"] == "off":
-                status = "reported"
+            if pol["mode"] in ("off", "suggest"):
+                status = "no_action"
             else:
                 status = weighted(rng, [("fixed", 70), ("rejected", 9), ("escalated", 9),
                                         ("failed", 3), ("resolved", 9)])

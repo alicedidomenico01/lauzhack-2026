@@ -80,7 +80,7 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     }
     if (!userInitiated && (quietUntil.get(issueId) || 0) > Date.now()) return;
 
-    const inc = { id: uid(), issueId, state: "detected", banner: null, startedAt: Date.now() };
+    const inc = { id: uid(), issueId, state: "detected", banner: null, startedAt: Date.now(), passive: false };
     open.set(issueId, inc);
     onIncident?.(issue.key, true);
 
@@ -119,6 +119,7 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     }
     if (suggestOnly) {
       inc.state = "reported";
+      inc.passive = true;
       inc.banner = proposeAction({
         section: sectionLabel,
         title: issue.title,
@@ -131,6 +132,7 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
 
     if (!willAct) {
       inc.state = "reported";
+      inc.passive = true;
       return; // stays open until clear(), then marked recovered
     }
 
@@ -208,7 +210,10 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     const inc = open.get(issueId);
     if (!inc) return;
     if (inc.state === "reported") {
-      update(inc, { status: "resolved", note: "recovered", outcome: "Recovered on its own" });
+      // Nothing was ever offered, so nothing was fixed: say that, not "recovered".
+      update(inc, inc.passive
+        ? { status: "no_action", note: "nothing to apply", outcome: "No action taken" }
+        : { status: "resolved", note: "recovered", outcome: "Recovered on its own" });
       if (inc.banner && !inc.banner.decided) {
         inc.banner.done("ok", "Back to normal.", "The problem cleared on its own.");
       }
