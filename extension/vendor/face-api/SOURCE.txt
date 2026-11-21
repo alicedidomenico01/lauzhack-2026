@@ -1,0 +1,3 @@
+@vladmandic/face-api 1.7.15 (MIT), from npm.
+Only face-api.esm.js (bundles TensorFlow.js) and the Tiny Face Detector model.
+Runs locally in the panel; no image leaves the computer.

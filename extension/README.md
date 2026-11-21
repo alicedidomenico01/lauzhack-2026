@@ -27,10 +27,12 @@ extension/
     ring.js              circular gauge
   lib/
     media.js             real devices (no "default" duplicates) + getUserMedia errors explained
+    face.js              lazy local face detector (loads vendor/face-api on first camera start)
+  vendor/face-api/       face-api 1.7.15 + Tiny Face Detector model (MIT)
   integrations/
     network.js           continuous RTT/jitter/failure sampling
     audio.js             live mic meter: dead / live / too quiet / clipping / noisy
-    camera.js            live preview: black / frozen / still image / exposure / fps
+    camera.js            live preview + face-aware light/framing checks and overlay
     memory.js            device class + event-loop lag
 ```
 
@@ -67,12 +69,30 @@ new file and one line in `app.js`.
 - **Camera** starts on its own **only if camera permission already exists**;
   otherwise it starts when you first open the section (first use always needs a
   prompt). Frames come from the track itself (`MediaStreamTrackProcessor`), so
-  the frame rate is real even when the section is collapsed. It reports, in
-  order: unplugged, paused by the system, **frozen** (no new frame for 2.5 s),
-  **black** (shutter closed, lens covered), **still image** (five identical
-  frames: a virtual camera placeholder), too dark, washed out, backlit,
-  **choppy** (under 15 fps), or ok. A verdict must hold for two samples before
-  it changes, so it does not flicker. Virtual cameras (OBS, Snap…) are labelled.
+  the frame rate is real even when the section is collapsed. Twice a second one
+  frame is analysed:
+  - **Face detection, locally.** Tiny Face Detector (`vendor/face-api`, MIT,
+    1.5 MB with its model) on TensorFlow.js/WebGL. Fast pass at 224 px, a
+    416 px retry only when it misses (finds faces down to ~10% of the width).
+    No image leaves the computer. If it cannot load, the check falls back to
+    frame-wide light and leaves framing grey rather than guessing.
+  - **Light in stops** (one stop = twice the light), computed in linear light
+    on the *lit side* of the face, so a shadow on one half is reported as side
+    light, not as "dark". Backlit = background ≥ 2 stops brighter *and* the
+    face under 150/255 (a white wall is 1–1.5 stops; a window 3–5). Too dark
+    under 70/255; side light ≥ 1.2 stops between the halves.
+  - **Framing**: face width 11–50% of the frame, centre no lower than 62%,
+    not more than 22% off-centre, head not cut off at the top.
+  - Four chips (Image, Light, Framing, Smooth); the headline names the most
+    urgent problem with its numbers and the fix, and lists the others.
+  - **Overlay on the preview** (mirrored like the video): face brackets in
+    green/amber/red, a dashed target zone when framing is off, and **zebra
+    stripes** on blown-out areas when light is the problem.
+  - Still reported first: unplugged, paused by the system, **frozen** (no new
+    frame for 2.5 s), **black** (shutter, lens covered), **still image** (3 s
+    of identical frames: a virtual camera placeholder), **choppy** (< 15 fps,
+    from capture timestamps so a busy panel does not look like a bad camera).
+  - Asks for 720p so the resolution shown is what the camera really delivers.
 - Both explain *why* a device will not open: blocked by Chrome, blocked by the
   OS privacy settings, not found, or held by another app.
 - **Memory** uses Chrome's `system.cpu` and `system.memory` extension APIs.
