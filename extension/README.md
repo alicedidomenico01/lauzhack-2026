@@ -38,16 +38,37 @@ new file and one line in `app.js`.
 
 ## Behaviour
 
-- **Network** samples 3 probes every 5 s and animates the ring. No click.
+- **Network** probes once every 500 ms and animates one ring: the number inside
+  is the browser's own throughput estimate (Mb/s, capped at "10+"), the ring
+  colour is the quality score from latency + jitter + failures. Everything else
+  lives behind a **Details** disclosure.
 - **Microphone** opens on panel start, shows a live meter, and decides by
   itself: sound within the last 3 s = ok, 12 s of silence = it switches to the
   other input once and reports which one works.
 - **Camera** starts on its own **only if camera permission already exists**;
   otherwise it starts when you first open the section (first use always needs a
   prompt). Live preview, verdict recomputed every 700 ms.
-- **Memory** reports device RAM, cores and event-loop lag every 2.5 s.
+- **Memory** reports device RAM, cores, event-loop lag and the lag trend. If lag
+  is high or climbing, a **"Fixing remotely…"** banner appears with a 3 s
+  countdown and a Cancel button — the announce-then-act pattern, simulated.
 - Everything stops when the panel is hidden, so the mic and camera LEDs are
   honest.
+
+## Camera or microphone will not open
+
+Chrome **cannot show a camera/microphone prompt inside a side panel**, so the
+first grant has to happen in a tab:
+
+1. In the failing section, click **Open in a tab to allow** (same page, normal
+   tab) — the prompt appears there.
+2. Grant it, close the tab, press ↻ **Reload** in `chrome://extensions`.
+3. If the prompt never appears at all: macOS → System Settings → Privacy &
+   Security → **Camera / Microphone** → enable **Google Chrome**.
+4. If it is blocked, not missing: `chrome://settings/content/camera` and
+   `/microphone` → check the extension is not in "Not allowed".
+
+Once granted for the extension origin, the side panel inherits it.
+
 
 ## What each check can and cannot see
 

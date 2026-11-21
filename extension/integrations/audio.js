@@ -1,6 +1,8 @@
 // Microphone: runs as soon as the panel opens. No buttons.
 // The only action it can take on its own is trying the other input.
 
+import { permissionHelp } from "../ui/permission.js";
+
 const SPEECH_DB = -45;
 const LISTEN_MS = 12000;
 const QUIET_MS = 3000;
@@ -178,8 +180,9 @@ export function mountAudio(root, { setStatus }) {
         ui.verdict.className = "verdict bad";
         ui.verdict.textContent =
           err.name === "NotAllowedError"
-            ? "Microphone blocked. Allow it for this extension, then reload."
+            ? "Microphone blocked."
             : `Could not open a microphone: ${err.message}`;
+        if (err.name === "NotAllowedError") permissionHelp(root, "microphone");
       }
     },
     stop() {

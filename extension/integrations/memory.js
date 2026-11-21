@@ -1,8 +1,13 @@
-// Machine: device class plus event-loop lag, sampled continuously.
-// Lag is an honest proxy for "this machine is struggling right now".
+// Machine: device class, event-loop lag, and a rising-trend alert.
+//
+// A browser cannot read CPU or system memory. Lag is what we can honestly
+// measure, and it is the thing the user actually feels.
+
+import { showAction } from "../ui/action-banner.js";
 
 const WINDOW_MS = 600;
-const INTERVAL_MS = 2500;
+const INTERVAL_MS = 2000;
+const HISTORY = 8;
 
 async function measureLag(ms) {
   const drifts = [];
@@ -25,50 +30,91 @@ export function mountMemory(root, { setStatus }) {
       <div><dt>Device RAM</dt><dd data-ram>—</dd></div>
       <div><dt>Cores</dt><dd data-cores>—</dd></div>
       <div><dt>UI lag</dt><dd data-lag>—</dd></div>
-      <div><dt>Samples</dt><dd data-count>0</dd></div>
+      <div><dt>Trend</dt><dd data-trend>—</dd></div>
     </div>
-    <p class="verdict" data-verdict></p>
-    <p class="hint">A browser cannot read system memory; lag is the honest proxy. Real pressure needs a local helper (vm_stat).</p>
+    <p class="verdict" data-verdict>Measuring…</p>
+    <p class="hint">CPU and system memory are invisible to a browser. Lag is the proxy; a local helper (vm_stat, top) would give the real numbers.</p>
   `;
 
   const ui = {
     ram: root.querySelector("[data-ram]"),
     cores: root.querySelector("[data-cores]"),
     lag: root.querySelector("[data-lag]"),
-    count: root.querySelector("[data-count]"),
+    trend: root.querySelector("[data-trend]"),
     verdict: root.querySelector("[data-verdict]"),
   };
 
   ui.ram.textContent = navigator.deviceMemory ? `~${navigator.deviceMemory} GB` : "hidden";
   ui.cores.textContent = navigator.hardwareConcurrency || "—";
 
+  const history = [];
   let timer = 0;
   let running = false;
-  let samples = 0;
+  let actionShown = false;
 
   async function cycle() {
     if (running) return;
     running = true;
 
     const lag = await measureLag(WINDOW_MS);
-    samples++;
     running = false;
 
-    ui.lag.textContent = `${lag.toFixed(0)} ms/s`;
-    ui.count.textContent = String(samples);
+    history.push(lag);
+    if (history.length > HISTORY) history.shift();
 
-    if (lag > 80) {
+    const first = history[0];
+    const last = history[history.length - 1];
+    const delta = last - first;
+
+    ui.lag.textContent = `${lag.toFixed(0)} ms/s`;
+    ui.trend.textContent =
+      history.length < 3 ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(0)} ms`;
+
+    const rising = history.length >= 4 && delta > 25 && last > 40;
+
+    if (last > 80) {
       ui.verdict.className = "verdict bad";
       ui.verdict.textContent = "Struggling right now: calls freeze, typing lags.";
       setStatus("memory", "bad", "struggling");
-    } else if (lag > 30) {
+    } else if (last > 30 || rising) {
       ui.verdict.className = "verdict warn";
-      ui.verdict.textContent = "Mild stutter. Something is competing for the CPU.";
-      setStatus("memory", "warn", "attention");
+      ui.verdict.textContent = rising
+        ? "Getting worse: something is climbing in the background."
+        : "Mild stutter. Something is competing for the CPU.";
+      setStatus("memory", "warn", rising ? "rising" : "attention");
     } else {
       ui.verdict.className = "verdict ok";
       ui.verdict.textContent = "Responsive. Nothing is starving the machine.";
       setStatus("memory", "ok", "ok");
+    }
+
+    // The action flow: announce, give 3 s to cancel, then "apply".
+    if ((last > 80 || rising) && !actionShown) {
+      actionShown = true;
+      setStatus("memory", "busy", "acting");
+      showAction({
+        title: "Fixing remotely…",
+        detail:
+          "Simulated remote action: restart the process starving this machine. Cancel within 3 s.",
+        seconds: 3,
+        onApply: () => {
+          ui.verdict.className = "verdict ok";
+          ui.verdict.textContent =
+            "Action applied (simulated). A Nexthink remote action would do this for real.";
+          setStatus("memory", "ok", "fixed");
+          setTimeout(() => {
+            actionShown = false;
+          }, 20000);
+        },
+        onCancel: () => {
+          ui.verdict.className = "verdict warn";
+          ui.verdict.textContent = "Cancelled. Nothing was applied.";
+          setStatus("memory", "warn", "cancelled");
+          setTimeout(() => {
+            actionShown = false;
+          }, 10000);
+        },
+      });
     }
   }
 

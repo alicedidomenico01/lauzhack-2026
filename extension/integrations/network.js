@@ -1,14 +1,12 @@
-// Network: continuous round-trip sampling against a tiny 204 endpoint.
-//
-// What this measures: the current link only — latency, jitter, failures.
-// What it cannot measure: other networks around you. No browser API can
-// enumerate Wi-Fi networks or bind a request to another interface.
+// Network: one tiny probe every 500 ms, rendered as a single ring.
+// The ring shows the browser's own throughput estimate; latency and jitter are
+// ours, and live behind "Details".
 
 import { createRing } from "../ui/ring.js";
 
 const PROBE_URL = "https://www.gstatic.com/generate_204";
-const PROBES = 3;
-const INTERVAL_MS = 5000;
+const INTERVAL_MS = 500;
+const WINDOW = 20;
 
 const COLORS = { ok: "#35c88a", warn: "#e8b23c", bad: "#ef5f5f" };
 
@@ -27,72 +25,90 @@ function jitter(xs) {
 
 export function mountNetwork(root, { setStatus }) {
   root.innerHTML = `
-    <div class="metrics">
-      <div><dt>Jitter</dt><dd data-jitter>—</dd></div>
-      <div><dt>Failures</dt><dd data-loss>—</dd></div>
-      <div><dt>Connection</dt><dd data-type>—</dd></div>
-      <div><dt>Updated</dt><dd data-age>—</dd></div>
-    </div>
-    <p class="verdict" data-verdict></p>
-    <p class="hint">Live, every 5 s. A browser cannot see other networks around you — that needs a local helper.</p>
+    <p class="verdict" data-verdict>Measuring…</p>
+    <details class="more">
+      <summary>Details</summary>
+      <dl class="metrics">
+        <div><dt>Latency</dt><dd data-rtt>—</dd></div>
+        <div><dt>Jitter</dt><dd data-jitter>—</dd></div>
+        <div><dt>Failures</dt><dd data-loss>—</dd></div>
+        <div><dt>Connection</dt><dd data-type>—</dd></div>
+      </dl>
+      <p class="hint" data-note></p>
+    </details>
   `;
 
   const ring = createRing();
   root.prepend(ring.el);
 
-  const el = {
+  const ui = {
+    verdict: root.querySelector("[data-verdict]"),
+    rtt: root.querySelector("[data-rtt]"),
     jitter: root.querySelector("[data-jitter]"),
     loss: root.querySelector("[data-loss]"),
     type: root.querySelector("[data-type]"),
-    age: root.querySelector("[data-age]"),
-    verdict: root.querySelector("[data-verdict]"),
+    note: root.querySelector("[data-note]"),
   };
 
-  let timer = null;
-  let running = false;
+  const samples = [];
+  let attempts = 0;
+  let fails = 0;
+  let timer = 0;
+  let busy = false;
+  let lastType = null;
 
-  async function cycle() {
-    if (running) return;
-    running = true;
+  async function tick() {
+    if (busy) return;
+    busy = true;
+    attempts++;
 
-    const times = [];
-    let fails = 0;
-
-    for (let i = 0; i < PROBES; i++) {
-      const t0 = performance.now();
-      try {
-        await fetch(`${PROBE_URL}?n=${Math.random()}`, {
-          mode: "no-cors",
-          cache: "no-store",
-        });
-        times.push(performance.now() - t0);
-      } catch {
-        fails++;
-      }
+    const t0 = performance.now();
+    try {
+      await fetch(`${PROBE_URL}?n=${Math.random()}`, {
+        mode: "no-cors",
+        cache: "no-store",
+      });
+      samples.push(performance.now() - t0);
+      if (samples.length > WINDOW) samples.shift();
+    } catch {
+      fails++;
     }
 
-    const samples = times.slice(1);
-    running = false;
+    busy = false;
+    render();
+  }
 
-    if (samples.length < 2) {
-      el.jitter.textContent = "—";
-      el.loss.textContent = `${fails}/${PROBES}`;
-      ring.set(0, "—", "offline", COLORS.bad);
-      el.verdict.className = "verdict bad";
-      el.verdict.textContent = "No reply from the probe: you are offline or it is blocked.";
+  function render() {
+    const conn = navigator.connection || {};
+
+    // The browser's own estimate, in Mb/s. It caps at 10, hence "10+".
+    const downlink = typeof conn.downlink === "number" ? conn.downlink : null;
+    const downlinkText =
+      downlink === null ? "—" : downlink >= 10 ? "10+" : String(downlink);
+
+    const rtt = samples.length ? median(samples) : null;
+    const jit = jitter(samples);
+
+    ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
+    ui.jitter.textContent = `${jit.toFixed(0)} ms`;
+    ui.loss.textContent = `${fails}/${attempts}`;
+    ui.type.textContent = conn.effectiveType || conn.type || "unknown";
+
+    if (rtt === null) {
+      ring.set(0, downlinkText, "Mb/s", COLORS.bad);
+      ui.verdict.className = "verdict bad";
+      ui.verdict.textContent = "No reply yet: offline or the probe is blocked.";
       setStatus("network", "bad", "offline");
       return;
     }
-
-    const rtt = median(samples);
-    const jit = jitter(samples);
-    const conn = navigator.connection || {};
 
     const score = Math.max(
       0,
       Math.min(
         100,
-        Math.round(100 - Math.max(0, rtt - 60) * 0.25 - jit * 0.35 - fails * 25)
+        Math.round(
+          100 - Math.max(0, rtt - 60) * 0.25 - jit * 0.35 - fails * 20
+        )
       )
     );
 
@@ -104,29 +120,31 @@ export function mountNetwork(root, { setStatus }) {
           ? "Usable but shaky. Audio will glitch."
           : "Unreliable. Expect dropouts.";
 
-    el.jitter.textContent = `${jit.toFixed(0)} ms`;
-    el.loss.textContent = `${fails}/${PROBES}`;
-    el.type.textContent =
-      [conn.effectiveType, conn.downlink ? `~${conn.downlink} Mb/s` : null]
-        .filter(Boolean)
-        .join(" · ") || "unknown";
-    el.age.textContent = "just now";
-
-    ring.set(score, `${rtt.toFixed(0)}`, "ms round trip", COLORS[level]);
-    el.verdict.className = `verdict ${level}`;
-    el.verdict.textContent = text;
+    ring.set(score, downlinkText, "Mb/s", COLORS[level]);
+    ui.verdict.className = `verdict ${level}`;
+    ui.verdict.textContent = text;
     setStatus("network", level, level === "ok" ? "ok" : "attention");
+
+    // Detect a network switch (e.g. moving to a hotspot) and say so.
+    const type = conn.type || conn.effectiveType || null;
+    if (type && lastType && type !== lastType) {
+      ui.note.textContent = `Network changed: ${lastType} → ${type}. Compare the numbers you saw before.`;
+    } else if (!ui.note.textContent) {
+      ui.note.textContent =
+        "A browser cannot see other networks around you. Switching to your hotspot and watching this change is the only comparison available without a local helper.";
+    }
+    lastType = type || lastType;
   }
 
   return {
     start() {
       if (timer) return;
-      cycle();
-      timer = setInterval(cycle, INTERVAL_MS);
+      tick();
+      timer = setInterval(tick, INTERVAL_MS);
     },
     stop() {
       clearInterval(timer);
-      timer = null;
+      timer = 0;
     },
   };
 }

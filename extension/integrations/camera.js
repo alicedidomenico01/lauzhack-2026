@@ -2,6 +2,8 @@
 // Starts by itself when permission is already granted, otherwise on first open
 // of the section (a permission prompt cannot be avoided on first use).
 
+import { permissionHelp } from "../ui/permission.js";
+
 const SAMPLE_MS = 700;
 
 export function mountCamera(root, { setStatus }) {
@@ -100,9 +102,10 @@ export function mountCamera(root, { setStatus }) {
         ui.empty.hidden = false;
         ui.empty.textContent =
           err.name === "NotAllowedError"
-            ? "Camera blocked. Allow it for this extension, then reopen this section."
+            ? "Camera blocked. Use the button below to allow it."
             : `No camera: ${err.message}`;
         setStatus("camera", "bad", err.name === "NotAllowedError" ? "blocked" : "error");
+        if (err.name === "NotAllowedError") permissionHelp(root, "camera");
       }
     },
     stop() {
