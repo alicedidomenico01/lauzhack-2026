@@ -14,7 +14,7 @@ const state = {
 };
 
 const TIME_SAVED_NOTE =
-  "Estimated, not measured: every fixed report is credited with the minutes that failure usually costs (15 for a dead or wrong microphone, 12 for a slow network, 10 for a frozen camera, 8 for CPU or memory).";
+  "Estimated, not measured: every fixed report is credited with 3 minutes. It is a deliberately flat number, not a model of how long each failure really costs.";
 
 const $ = (id) => document.getElementById(id);
 

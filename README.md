@@ -139,9 +139,9 @@ Every report belongs to a person. Seeded employees are `Employee 1`,
 `Employee 2`, and so on; anything reporting from this laptop is `You`.
 
 **Time saved is an estimate, not a measurement.** Every fixed incident is
-credited with the minutes that failure usually costs (15 for a dead or wrong
-microphone, 12 for a slow network, 10 for a frozen camera, 8 for CPU or memory).
-The info icon in the UI says so.
+credited with 3 minutes, whatever failed. The number is deliberately flat: it is
+simple to explain and it does not pretend to model how long each failure really
+costs. The info icon in the UI says so.
 
 The first start seeds a simulated fleet (about 180 devices, 14 days) so the
 charts have something to show. It follows a weekly shape with one bad day and
