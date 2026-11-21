@@ -46,8 +46,6 @@ exposes `{ start(), stop() }`. `extension/app.js` only wires them.
 - A slow connection produces a **suggestion**, not an action: the banner has no
   buttons, because a browser cannot change networks. It closes itself when the
   speed recovers.
-- The Wi-Fi name comes from the native helper. Without it the panel shows the
-  fixed label `freewifi-epfl`, which is a stage label, not a reading.
 
 ### Microphone
 
@@ -87,14 +85,13 @@ exposes `{ start(), stop() }`. `extension/app.js` only wires them.
 
 ### Memory
 
-- `chrome.system.cpu` and `chrome.system.memory`: system-wide CPU utilization
-  (smoothed, so it reads like a dashboard) and available memory.
+- `chrome.system.cpu` and `chrome.system.memory`: system-wide CPU utilization and available memory.
 - With the helper it also names the busiest CPU process and the largest memory
   process, and the actions can quit them.
 
-### Demo damage
+### Demo injected "damages"
 
-The ⚡ in a section header breaks that check on purpose: a slow connection, a
+The ⚡ icon in a section header breaks that check on purpose: a slow connection, a
 microphone that delivers digital silence, a camera whose frames stop, a runaway
 process at high CPU. Everything downstream is the real code path, and the
 incident is tagged `demo` in the banner and in the dashboard. Triggering a
