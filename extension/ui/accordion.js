@@ -19,16 +19,24 @@ export function initAccordion(onToggle) {
   });
 }
 
-export function setStatus(key, level, text) {
-  const dot = document.querySelector(`.row[data-key="${key}"] [data-status]`);
-  if (!dot) return;
-
+// Takes the element, not a selector: the element is resolved once at mount,
+// so a bad selector can only fail loudly, never silently.
+export function paintDot(dot, level, text) {
+  if (!dot) {
+    console.error("[setup-check] status dot element is missing");
+    return;
+  }
   const state = level || "idle";
+  const color = DOT_COLORS[state] || DOT_COLORS.idle;
   dot.dataset.level = state;
-  dot.className = `row-dot ${state}`;
-  // Inline as well: the dot must be right even if a stylesheet rule is missed.
-  dot.style.background = DOT_COLORS[state] || DOT_COLORS.idle;
+  dot.style.background = color;
+  dot.style.boxShadow =
+    state === "idle" ? "none" : `0 0 0 3px ${color}22`;
   dot.title = text || "";
+}
+
+export function dotOf(key) {
+  return document.querySelector(`.row[data-key="${key}"] [data-status]`);
 }
 
 export function mountOf(key) {

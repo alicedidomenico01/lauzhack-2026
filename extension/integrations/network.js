@@ -1,17 +1,18 @@
-// Network: latency probes every 500 ms, real download speed every 12 s.
-// The speed is smoothed: a single 1 MB transfer is noisy by nature.
+// Network: latency probes every 500 ms, download speed every 1 s.
+//
+// Speed is measured for real, with a payload sized so each transfer lasts about
+// 200 ms: at 40 Mb/s that is 1 MB, at 2 Mb/s about 50 KB. Measuring every 500 ms
+// would spend most of the bandwidth measuring it.
 
 import { createRing } from "../ui/ring.js";
 
 const PROBE_URL = "https://www.gstatic.com/generate_204";
 const SPEED_URL = "https://speed.cloudflare.com/__down";
-const SPEED_BYTES = 1000000;
 const PROBE_MS = 500;
-const SPEED_MS = 12000;
+const SPEED_MS = 1000;
 const WINDOW = 20;
 
-// The ring fills on a square-root scale up to 25 Mb/s, so a fast link looks
-// full but a 1 Mb/s link still moves visibly instead of sitting at 0%.
+// Square-root scale: the ring is full at 25 Mb/s but a 1 Mb/s link still moves.
 const SPEED_MAX = 25;
 const SPEED_OK = 8;
 const SPEED_WARN = 2;
@@ -34,23 +35,6 @@ function jitter(xs) {
 function formatSpeed(mbps) {
   if (mbps >= 1) return { value: mbps.toFixed(1), unit: "Mb/s" };
   return { value: String(Math.round(mbps * 1000)), unit: "kb/s" };
-}
-
-function connectionSignature() {
-  const c = navigator.connection || {};
-  return [c.type, c.effectiveType].filter(Boolean).join("·") || "unknown";
-}
-
-function connectionLabel() {
-  const c = navigator.connection || {};
-  const parts = [];
-  if (c.type) parts.push(c.type.charAt(0).toUpperCase() + c.type.slice(1));
-  if (c.effectiveType) {
-    parts.push(
-      c.effectiveType === "slow-2g" ? "2G slow" : c.effectiveType.toUpperCase()
-    );
-  }
-  return parts.join(" · ") || "unknown";
 }
 
 export function mountNetwork(root, { setStatus }) {
@@ -82,7 +66,7 @@ export function mountNetwork(root, { setStatus }) {
           <div><dt>Latency</dt><dd data-rtt>—</dd></div>
           <div><dt>Jitter</dt><dd data-jitter>—</dd></div>
           <div><dt>Lost probes</dt><dd data-loss>—</dd></div>
-          <div><dt>Connection</dt><dd data-type>—</dd></div>
+          <div><dt>Interface</dt><dd data-type>—</dd></div>
         </dl>
       </details>
     </div>
@@ -108,12 +92,49 @@ export function mountNetwork(root, { setStatus }) {
   let fails = 0;
   let consecutiveFails = 0;
   let speed = null;
+  let ssid = null;
   let baseline = null;
   let switchSignature = null;
   let demo = false;
   let probeTimer = 0;
   let speedTimer = 0;
+  let ssidTimer = 0;
   let probing = false;
+  let measuring = false;
+
+  /* ---- connection name: native helper, else what Chrome exposes ---- */
+
+  function chromeLabel() {
+    const c = navigator.connection || {};
+    const parts = [];
+    if (c.type) parts.push(c.type.charAt(0).toUpperCase() + c.type.slice(1));
+    if (c.effectiveType) {
+      parts.push(
+        c.effectiveType === "slow-2g" ? "2G slow" : c.effectiveType.toUpperCase()
+      );
+    }
+    return parts.join(" · ") || "unknown";
+  }
+
+  function signature() {
+    if (ssid) return `ssid:${ssid}`;
+    const c = navigator.connection || {};
+    return `net:${c.type || "?"}:${c.effectiveType || "?"}`;
+  }
+
+  async function refreshSsid() {
+    try {
+      const res = await chrome.runtime.sendNativeMessage("com.setupcheck.host", {
+        cmd: "wifi",
+      });
+      ssid = res?.ssid ?? null;
+    } catch {
+      ssid = null; // helper not installed: fall back, never break
+    }
+    render();
+  }
+
+  /* ---- latency ---- */
 
   async function probe() {
     if (probing) return;
@@ -126,7 +147,6 @@ export function mountNetwork(root, { setStatus }) {
         mode: "no-cors",
         cache: "no-store",
       });
-      // Demo mode holds the request open so latency looks genuinely bad.
       if (demo) await new Promise((r) => setTimeout(r, 280 + Math.random() * 200));
       samples.push(performance.now() - t0);
       if (samples.length > WINDOW) samples.shift();
@@ -134,17 +154,27 @@ export function mountNetwork(root, { setStatus }) {
     } catch {
       fails++;
       consecutiveFails++;
-      if (consecutiveFails >= 3) speed = 0; // offline: stop showing a stale number
+      if (consecutiveFails >= 3) speed = 0;
     }
 
     probing = false;
     render();
   }
 
+  /* ---- throughput ---- */
+
+  function payloadBytes() {
+    // ~200 ms of data at the last known speed, clamped to something sane.
+    const mbps = speed && speed > 0.2 ? speed : 2;
+    const bytes = Math.round(((mbps * 1e6) / 8) * 0.2);
+    return Math.min(2000000, Math.max(40000, bytes));
+  }
+
   async function measureSpeed() {
+    if (measuring) return;
+
     if (demo) {
-      // Deliberately below the red threshold.
-      speed = 0.9 + Math.random() * 0.4;
+      speed = 0.9 + Math.random() * 0.4; // deliberately below the red threshold
       render();
       return;
     }
@@ -155,34 +185,38 @@ export function mountNetwork(root, { setStatus }) {
       return;
     }
 
+    measuring = true;
+    const bytes = payloadBytes();
     try {
       const t0 = performance.now();
-      const res = await fetch(
-        `${SPEED_URL}?bytes=${SPEED_BYTES}&n=${Math.random()}`,
-        { cache: "no-store" }
-      );
+      const res = await fetch(`${SPEED_URL}?bytes=${bytes}&n=${Math.random()}`, {
+        cache: "no-store",
+      });
       const buf = await res.arrayBuffer();
       const secs = (performance.now() - t0) / 1000;
-      if (secs <= 0 || buf.byteLength === 0) return;
-
-      const raw = (buf.byteLength * 8) / secs / 1e6;
-      // Smooth: one transfer is noisy, two in a row are believable.
-      speed = speed === null || speed === 0 ? raw : speed * 0.55 + raw * 0.45;
-      render();
+      if (secs > 0 && buf.byteLength > 0) {
+        const raw = (buf.byteLength * 8) / secs / 1e6;
+        speed = speed === null || speed === 0 ? raw : speed * 0.6 + raw * 0.4;
+      }
     } catch {
       /* keep the last value; the probe loop decides when we are offline */
     }
+    measuring = false;
+    render();
   }
+
+  /* ---- view ---- */
 
   function render() {
     const rtt = samples.length ? median(samples) : null;
     const jit = jitter(samples);
+    const label = ssid || chromeLabel();
 
     ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
     ui.jitter.textContent = `${jit.toFixed(0)} ms`;
     ui.loss.textContent = `${fails}/${attempts}`;
-    ui.type.textContent = connectionLabel();
-    ui.conn.textContent = connectionLabel();
+    ui.type.textContent = chromeLabel();
+    ui.conn.textContent = label;
 
     if (speed === null) {
       ring.set(0, "—", "Mb/s", COLORS.bad);
@@ -210,10 +244,9 @@ export function mountNetwork(root, { setStatus }) {
 
     setStatus("network", level, level === "ok" ? "ok" : "attention");
 
-    // The switch button is only useful while the link is red, and it must
-    // disappear as soon as the network itself changed.
-    const signature = connectionSignature();
-    if (switchSignature !== null && signature !== switchSignature) {
+    // The button must vanish once the network itself changed.
+    const sig = signature();
+    if (switchSignature !== null && sig !== switchSignature) {
       switchSignature = null;
       baseline = null;
       ui.badge.hidden = true;
@@ -241,7 +274,6 @@ export function mountNetwork(root, { setStatus }) {
       ? "Demo mode: simulated bad connection. Click to stop."
       : "Simulate a shaky connection (demo)";
 
-    // Full reset so nothing from the demo survives.
     samples = [];
     attempts = 0;
     fails = 0;
@@ -258,7 +290,7 @@ export function mountNetwork(root, { setStatus }) {
 
   ui.switchBtn.addEventListener("click", () => {
     baseline = speed;
-    switchSignature = connectionSignature();
+    switchSignature = signature();
     ui.switchBtn.hidden = true;
   });
 
@@ -281,15 +313,19 @@ export function mountNetwork(root, { setStatus }) {
       probe();
       probeTimer = setInterval(probe, PROBE_MS);
 
-      // Two transfers: the first pays for the TLS handshake.
+      refreshSsid();
+      ssidTimer = setInterval(refreshSsid, 5000);
+
       measureSpeed().then(measureSpeed);
       speedTimer = setInterval(measureSpeed, SPEED_MS);
     },
     stop() {
       clearInterval(probeTimer);
       clearInterval(speedTimer);
+      clearInterval(ssidTimer);
       probeTimer = 0;
       speedTimer = 0;
+      ssidTimer = 0;
     },
   };
 }

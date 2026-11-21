@@ -78,6 +78,28 @@ first grant has to happen in a tab:
 
 Once granted for the extension origin, the side panel inherits it.
 
+## Wi-Fi name (SSID) — needs the local helper
+
+A browser cannot read the SSID; `navigator.connection` only gives `wifi` and
+`4G`. The SSID lives in the OS, so the panel asks a small native process:
+
+```bash
+cd extension/native
+./install.sh <extension-id>     # id is on chrome://extensions
+```
+
+That writes
+`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.setupcheck.host.json`
+and points it at `host.py` (stdlib only, no dependencies). Reload the extension;
+the panel then shows `freewifi-epfl` instead of `Wi-Fi · 4G`, refreshed every 5 s.
+
+`host.py` tries `networksetup -getairportnetwork`, then
+`system_profiler SPAirPortDataType -json`. macOS may return `<redacted>` unless
+Location Services is allowed for the terminal that launched Chrome — that is an
+OS rule, not a bug in the helper. Without the helper the panel silently falls
+back to the connection type, so nothing breaks.
+
+
 
 ## What each check can and cannot see
 

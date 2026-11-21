@@ -3,7 +3,7 @@
   "name": "Setup Check",
   "version": "0.2.0",
   "description": "Checks that your microphone actually picks up sound, before you join a meeting.",
-  "permissions": ["sidePanel"],
+  "permissions": ["sidePanel", "nativeMessaging"],
   "host_permissions": [
     "https://www.gstatic.com/*",
     "https://speed.cloudflare.com/*"
