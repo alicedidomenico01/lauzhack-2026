@@ -1,0 +1,531 @@
+const state = {
+  tab: "overview",
+  days: 14,
+  fleet: true,
+  stats: null,
+  incidents: [],
+  policies: [],
+  employee: null,
+  search: "",
+  status: "",
+  section: "",
+  drawer: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+};
+
+const STATUS_LEVEL = {
+  fixed: "ok",
+  applied: "ok",
+  resolved: "ok",
+  rejected: "warn",
+  escalated: "bad",
+  failed: "bad",
+  interrupted: "warn",
+};
+
+const STATUS_LABEL = {
+  detected: "Detected",
+  proposed: "Proposed",
+  applying: "Applying",
+  fixed: "Fixed",
+  applied: "Applied",
+  escalated: "Escalated",
+  rejected: "Rejected",
+  failed: "Failed",
+  reported: "Reported",
+  resolved: "Recovered",
+  interrupted: "Interrupted",
+};
+
+const badge = (status) => {
+  const level = STATUS_LEVEL[status] || "neutral";
+  return el("span", `badge ${level}`, STATUS_LABEL[status] || status || "—");
+};
+
+const pct = (value) => (value === null || value === undefined ? "—" : `${Math.round(value * 100)}%`);
+
+const num = (value) => (value === null || value === undefined ? "—" : new Intl.NumberFormat().format(value));
+
+function ago(seconds) {
+  const delta = Date.now() / 1000 - seconds;
+  if (delta < 60) return "just now";
+  if (delta < 3600) return `${Math.round(delta / 60)} min ago`;
+  if (delta < 86400) return `${Math.round(delta / 3600)} h ago`;
+  return `${Math.round(delta / 86400)} d ago`;
+}
+
+const when = (seconds) => new Date(seconds * 1000).toLocaleString();
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return res.json();
+}
+
+async function load() {
+  const query = `days=${state.days}&fleet=${state.fleet ? 1 : 0}`;
+  try {
+    const [stats, incidents, policies] = await Promise.all([
+      api(`/api/stats?${query}`),
+      api(`/api/incidents?limit=500&live=${state.fleet ? 0 : 1}`),
+      api("/api/policies"),
+    ]);
+    state.stats = stats;
+    state.incidents = incidents.incidents || [];
+    state.policies = policies.policies || [];
+    render();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+/* ---------------------------------------------------------------- tabs */
+
+document.querySelectorAll(".tabs button").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.tab = button.dataset.tab;
+    document.querySelectorAll(".tabs button").forEach((b) => {
+      b.setAttribute("aria-selected", String(b === button));
+    });
+    document.querySelectorAll(".panel").forEach((panel) => {
+      panel.hidden = panel.id !== `panel-${state.tab}`;
+    });
+    render();
+  });
+});
+
+/* ---------------------------------------------------------------- render */
+
+function render() {
+  if (!state.stats) return;
+  if (state.tab === "overview") renderOverview();
+  if (state.tab === "reports") renderReports();
+  if (state.tab === "people") renderPeople();
+  if (state.tab === "actions") renderPolicies();
+}
+
+function renderOverview() {
+  const s = state.stats;
+  const kpis = $("kpis");
+  kpis.replaceChildren();
+
+  const cards = [
+    { label: "Reports", value: num(s.total), foot: `${num(s.devices)} devices · ${s.days} days` },
+    { label: "Fixed remotely", value: pct(s.fix_rate), foot: `${num(s.fixed)} of ${num(s.acted)} acted on`, level: "ok" },
+    { label: "Rejected by employees", value: pct(s.reject_rate), foot: `${num(s.rejected)} opt-outs`, level: "bad" },
+    { label: "Time given back", value: `${s.hours_saved} h`, foot: "vs. raising a ticket each time" },
+  ];
+
+  for (const card of cards) {
+    const box = el("dl", `kpi ${card.level || ""}`);
+    box.append(el("dt", "", card.label), el("dd", "", card.value), el("p", "foot", card.foot));
+    kpis.append(box);
+  }
+
+  const breaks = $("breaks");
+  breaks.replaceChildren();
+  const issues = (s.by_issue || []).slice(0, 8);
+  const max = Math.max(1, ...issues.map((i) => i.count));
+  for (const issue of issues) {
+    const row = el("div", "bar-row");
+    const label = el("span", "bar-label", issue.label || issue.issue);
+    const count = el("span", "bar-count", `${num(issue.count)}`);
+    const track = el("div", "bar-track");
+    const share = issue.count ? issue.fixed / issue.count : 0;
+    const fill = el("div", `bar-fill ${share >= 0.7 ? "ok" : share >= 0.4 ? "" : "warn"}`);
+    fill.style.width = `${Math.round((issue.count / max) * 100)}%`;
+    track.append(fill);
+    row.append(label, count, track);
+    breaks.append(row);
+  }
+  if (!issues.length) breaks.append(el("p", "empty", "No reports in this window."));
+
+  const trend = $("trend");
+  trend.replaceChildren();
+  const days = s.per_day || [];
+  const peak = Math.max(1, ...days.map((d) => Object.values(d.sections).reduce((a, b) => a + b, 0)));
+  for (const day of days) {
+    const total = Object.values(day.sections).reduce((a, b) => a + b, 0);
+    const col = el("div", "col");
+    const bar = el("i");
+    bar.style.height = `${Math.max(2, Math.round((total / peak) * 100))}%`;
+    bar.title = `${day.day}: ${total}`;
+    col.append(bar, el("span", "", day.day));
+    trend.append(col);
+  }
+
+  const recent = $("recent");
+  recent.replaceChildren();
+  const head = el("thead");
+  const headRow = el("tr");
+  ["When", "Employee", "Issue", "Status", "Action"].forEach((h) => headRow.append(el("th", "", h)));
+  head.append(headRow);
+  recent.append(head);
+
+  const body = el("tbody");
+  for (const incident of state.incidents.slice(0, 8)) {
+    const tr = el("tr", "clickable");
+    tr.append(
+      el("td", "", ago(incident.created_at)),
+      el("td", "", incident.employee_name || incident.device_name || "—"),
+      el("td", "", incident.title || incident.issue),
+      el("td", ""),
+      el("td", "", incident.action || "—")
+    );
+    tr.children[3].append(badge(incident.status));
+    if (incident.simulated) tr.children[2].append(" ", el("span", "tag", "simulated"));
+    tr.addEventListener("click", () => openDrawer(incident));
+    body.append(tr);
+  }
+  recent.append(body);
+  if (!state.incidents.length) {
+    const tr = el("tr");
+    const td = el("td", "empty", "Nothing reported yet.");
+    td.colSpan = 5;
+    tr.append(td);
+    body.append(tr);
+  }
+}
+
+function filteredIncidents() {
+  const search = state.search.trim().toLowerCase();
+  return state.incidents.filter((incident) => {
+    if (state.status && incident.status !== state.status) return false;
+    if (state.section && incident.section !== state.section) return false;
+    if (state.employee) {
+      const key = `${incident.employee_id} ${incident.employee_name}`;
+      if (!key.includes(state.employee)) return false;
+    }
+    if (!search) return true;
+    const haystack = [
+      incident.employee_name,
+      incident.device_name,
+      incident.device_id,
+      incident.title,
+      incident.issue,
+      incident.action,
+      incident.department,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(search);
+  });
+}
+
+function renderReports() {
+  fillFilters();
+
+  const table = $("reports");
+  table.replaceChildren();
+  const head = el("thead");
+  const headRow = el("tr");
+  ["When", "Employee", "Device", "Section", "Issue", "Status", "Action"].forEach((h) =>
+    headRow.append(el("th", "", h))
+  );
+  head.append(headRow);
+  table.append(head);
+
+  const body = el("tbody");
+  const rows = filteredIncidents();
+  for (const incident of rows) {
+    const tr = el("tr", "clickable");
+    const employee = el("td", "");
+    employee.append(el("div", "", incident.employee_name || "—"));
+    employee.append(el("div", "muted small", incident.employee_role || incident.department || ""));
+    tr.append(
+      el("td", "", ago(incident.created_at)),
+      employee,
+      el("td", "mono", incident.device_name || incident.device_id || "—"),
+      el("td", "", incident.section || "—"),
+      el("td", "", incident.title || incident.issue),
+      el("td", ""),
+      el("td", "", incident.action || "—")
+    );
+    tr.children[5].append(badge(incident.status));
+    tr.addEventListener("click", () => openDrawer(incident));
+    body.append(tr);
+  }
+  table.append(body);
+
+  if (!rows.length) {
+    const tr = el("tr");
+    const td = el("td", "empty", "No reports match these filters.");
+    td.colSpan = 7;
+    tr.append(td);
+    body.append(tr);
+  }
+
+  const note = $("reports-note");
+  note.textContent = `${num(rows.length)} of ${num(state.incidents.length)} reports shown`;
+  const clear = $("clear-employee");
+  clear.hidden = !state.employee;
+  clear.textContent = state.employee ? `Filtered by ${state.employee} · clear` : "";
+}
+
+function fillFilters() {
+  const status = $("status");
+  if (!status.options.length) {
+    status.append(new Option("Any status", ""));
+    Object.entries(STATUS_LABEL).forEach(([value, label]) => status.append(new Option(label, value)));
+    status.value = state.status;
+    status.addEventListener("change", () => {
+      state.status = status.value;
+      renderReports();
+    });
+  }
+
+  const section = $("section");
+  if (!section.options.length) {
+    section.append(new Option("Any section", ""));
+    ["network", "audio", "camera", "memory"].forEach((value) =>
+      section.append(new Option(value, value))
+    );
+    section.value = state.section;
+    section.addEventListener("change", () => {
+      state.section = section.value;
+      renderReports();
+    });
+  }
+}
+
+function renderPeople() {
+  const table = $("people");
+  table.replaceChildren();
+  const head = el("thead");
+  const headRow = el("tr");
+  ["Employee", "Role", "Department", "Office", "Reports", "Fixed", "Rejected", "Time lost"]
+    .forEach((h, index) => headRow.append(el("th", index > 3 ? "num" : "", h)));
+  head.append(headRow);
+  table.append(head);
+
+  const body = el("tbody");
+  const people = state.stats.by_employee || [];
+  for (const person of people) {
+    const tr = el("tr", "clickable");
+    const name = el("td", "");
+    name.append(el("div", "", person.name));
+    name.append(el("div", "muted small", person.employee_id));
+    tr.append(
+      name,
+      el("td", "", person.role || "—"),
+      el("td", "", person.department || "—"),
+      el("td", "", person.office || "—"),
+      el("td", "num", num(person.incidents)),
+      el("td", "num", num(person.fixed)),
+      el("td", "num", num(person.rejected)),
+      el("td", "num", `${Math.round(person.minutes / 6) / 10} h`)
+    );
+    tr.addEventListener("click", () => {
+      state.employee = person.employee_id;
+      state.search = "";
+      $("search").value = "";
+      document.querySelector('.tabs button[data-tab="reports"]').click();
+    });
+    body.append(tr);
+  }
+  table.append(body);
+
+  if (!people.length) {
+    const tr = el("tr");
+    const td = el("td", "empty", "No people in this window.");
+    td.colSpan = 8;
+    tr.append(td);
+    body.append(tr);
+  }
+}
+
+function renderPolicies() {
+  const table = $("policies");
+  table.replaceChildren();
+  const head = el("thead");
+  const headRow = el("tr");
+  ["Failure", "Action", "Mode", "Seconds", "Execution", "Params"].forEach((h) =>
+    headRow.append(el("th", "", h))
+  );
+  head.append(headRow);
+  table.append(head);
+
+  const body = el("tbody");
+  for (const policy of state.policies) {
+    const tr = el("tr");
+    tr.dataset.id = policy.id;
+
+    const failure = el("td", "");
+    failure.append(el("div", "", policy.label));
+    failure.append(el("div", "muted small", policy.section));
+
+    const mode = el("select");
+    [
+      ["auto", "Auto (opt-out)"],
+      ["ask", "Ask first"],
+      ["off", "Report only"],
+    ].forEach(([value, label]) => mode.append(new Option(label, value)));
+    mode.value = policy.mode;
+    mode.dataset.field = "mode";
+
+    const seconds = el("input");
+    seconds.type = "number";
+    seconds.min = "1";
+    seconds.max = "30";
+    seconds.value = policy.seconds;
+    seconds.dataset.field = "seconds";
+    seconds.style.width = "70px";
+
+    const execution = el("select");
+    ["real", "simulated"].forEach((value) => execution.append(new Option(value, value)));
+    execution.value = policy.execution;
+    execution.dataset.field = "execution";
+
+    const params = el("td", "");
+    for (const [key, value] of Object.entries(policy.params || {})) {
+      const input = el("input");
+      input.type = typeof value === "number" ? "number" : "text";
+      input.value = value;
+      input.dataset.param = key;
+      input.placeholder = key;
+      input.style.width = "110px";
+      input.style.marginRight = "6px";
+      params.append(input);
+    }
+
+    tr.append(failure, el("td", "", policy.action || "—"), el("td", ""), el("td", ""), el("td", ""), params);
+    tr.children[2].append(mode);
+    tr.children[3].append(seconds);
+    tr.children[4].append(execution);
+    body.append(tr);
+  }
+  table.append(body);
+}
+
+/* ---------------------------------------------------------------- drawer */
+
+function openDrawer(incident) {
+  const drawer = $("drawer");
+  drawer.replaceChildren();
+
+  const header = el("header");
+  const title = el("div");
+  title.append(el("h2", "", incident.title || incident.issue));
+  title.append(el("p", "muted", `${incident.section} · ${ago(incident.created_at)}`));
+  const close = el("button", "btn subtle", "Close");
+  close.addEventListener("click", closeDrawer);
+  header.append(title, close);
+
+  const facts = el("dl");
+  const rows = [
+    ["Employee", `${incident.employee_name || "—"}${incident.employee_role ? ` · ${incident.employee_role}` : ""}`],
+    ["Device", incident.device_name || incident.device_id || "—"],
+    ["Department", incident.department || "—"],
+    ["When", when(incident.created_at)],
+    ["Status", STATUS_LABEL[incident.status] || incident.status],
+    ["Action", incident.action || "—"],
+    ["Execution", incident.execution || "—"],
+    ["Duration", incident.duration_ms ? `${(incident.duration_ms / 1000).toFixed(1)} s` : "—"],
+    ["Source", incident.simulated ? "triggered on purpose" : incident.fleet ? "simulated fleet" : "live device"],
+  ];
+  for (const [key, value] of rows) {
+    facts.append(el("dt", "", key), el("dd", "", value));
+  }
+
+  const timeline = el("ol", "timeline");
+  for (const step of incident.timeline || []) {
+    const level = STATUS_LEVEL[step.status] || "";
+    const item = el("li", level);
+    item.append(el("div", "", STATUS_LABEL[step.status] || step.status));
+    item.append(el("time", "", when(step.t)));
+    if (step.note) item.append(el("div", "muted small", step.note));
+    timeline.append(item);
+  }
+
+  drawer.append(header, facts);
+  drawer.append(el("h3", "", "Timeline"));
+  drawer.append(timeline);
+
+  if (incident.diagnostics) {
+    drawer.append(el("h3", "", "Diagnostics"));
+    const pre = el("pre", "json");
+    pre.textContent = JSON.stringify(incident.diagnostics, null, 2);
+    drawer.append(pre);
+  }
+
+  state.drawer = incident.id;
+  drawer.hidden = false;
+  $("scrim").hidden = false;
+}
+
+function closeDrawer() {
+  state.drawer = null;
+  $("drawer").hidden = true;
+  $("scrim").hidden = true;
+}
+
+$("scrim").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeDrawer();
+});
+
+/* ---------------------------------------------------------------- controls */
+
+$("days").addEventListener("change", (event) => {
+  state.days = Number(event.target.value);
+  load();
+});
+
+$("fleet").addEventListener("change", (event) => {
+  state.fleet = event.target.checked;
+  load();
+});
+
+$("refresh").addEventListener("click", load);
+
+$("search").addEventListener("input", (event) => {
+  state.search = event.target.value;
+  if (state.tab === "reports") renderReports();
+});
+
+$("clear-employee").addEventListener("click", () => {
+  state.employee = null;
+  renderReports();
+});
+
+$("save").addEventListener("click", async () => {
+  const updates = [];
+  for (const row of $("policies").querySelectorAll("tbody tr")) {
+    const params = {};
+    for (const input of row.querySelectorAll("[data-param]")) {
+      params[input.dataset.param] = input.type === "number" ? Number(input.value) : input.value;
+    }
+    updates.push({
+      id: row.dataset.id,
+      mode: row.querySelector('[data-field="mode"]').value,
+      seconds: Number(row.querySelector('[data-field="seconds"]').value),
+      execution: row.querySelector('[data-field="execution"]').value,
+      params,
+    });
+  }
+  try {
+    const result = await api("/api/policies", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policies: updates }),
+    });
+    state.policies = result.policies;
+    $("save-note").textContent = "Saved. Devices pick this up within seconds.";
+  } catch (err) {
+    $("save-note").textContent = `Could not save: ${err.message}`;
+  }
+});
+
+setInterval(() => {
+  if (!state.drawer && document.visibilityState === "visible") load();
+}, 8000);
+
+load();

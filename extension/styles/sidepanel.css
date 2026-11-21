@@ -380,11 +380,21 @@ button.ghost:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ---------- action banner ---------- */
 
-.action-banner {
+.action-stack {
   position: fixed;
   left: 10px;
   right: 10px;
   bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.action-banner {
+  position: relative;
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
   gap: 4px 10px;
@@ -394,7 +404,6 @@ button.ghost:hover { border-color: var(--accent); color: var(--accent); }
   padding: 12px 12px 0;
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
   animation: rise 200ms ease-out;
-  z-index: 10;
   overflow: hidden;
 }
 

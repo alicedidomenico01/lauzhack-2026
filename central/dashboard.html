@@ -1,366 +1,131 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Setup Check · IT view</title>
-<style>
-  :root {
-    --bg: #0e1116; --card: #151a22; --card2: #1a2029; --line: #262d38; --text: #e8edf5;
-    --muted: #8b97a8; --ok: #35c88a; --warn: #e8b23c; --bad: #ef5f5f; --accent: #4c8dff;
-    --network: #4c8dff; --audio: #35c88a; --camera: #b07cff; --memory: #e8b23c;
-    color-scheme: dark;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif; }
-  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; background: rgba(14,17,22,.92); backdrop-filter: blur(8px); z-index: 5; }
-  header h1 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
-  header h1 span { color: var(--muted); font-weight: 500; }
-  .live { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
-  .live.on i { background: var(--ok); box-shadow: 0 0 0 4px rgba(53,200,138,.15); }
-  .spacer { flex: 1; }
-  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
-  .toggle input { accent-color: var(--accent); }
-  button { font: inherit; color: var(--text); background: var(--card2); border: 1px solid var(--line);
-    border-radius: 8px; padding: 6px 11px; cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-  main { padding: 20px 24px 40px; max-width: 1400px; margin: 0 auto; }
-  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
-  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
-  .kpi b { display: block; font-size: 26px; letter-spacing: -.02em; margin: 2px 0; }
-  .kpi small { color: var(--muted); font-size: 12px; }
-  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
-  .grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-  .card h2 { margin: 0 0 4px; font-size: 14px; }
-  .card .sub { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
-  .feed { display: flex; flex-direction: column; gap: 6px; max-height: 640px; overflow: auto; }
-  .inc { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; gap: 10px; align-items: center;
-    padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card2); cursor: pointer; }
-  .inc:hover { border-color: #3a4656; }
-  .inc.fresh { animation: flash 2.4s ease-out; }
-  @keyframes flash { 0% { background: rgba(76,141,255,.35); border-color: var(--accent); } 100% { background: var(--card2); } }
-  .inc .ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; }
-  .inc .ico svg { width: 16px; height: 16px; }
-  .inc .t1 { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .inc .t2 { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tag { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 99px; margin-left: 6px;
-    border: 1px solid var(--line); color: var(--muted); font-weight: 500; vertical-align: 1px; }
-  .tag.live { color: var(--accent); border-color: rgba(76,141,255,.5); }
-  .pill { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
-  .pill.fixed, .pill.applied, .pill.resolved { color: var(--ok); background: rgba(53,200,138,.12); }
-  .pill.escalated { color: var(--warn); background: rgba(232,178,60,.13); }
-  .pill.failed { color: var(--bad); background: rgba(239,95,95,.13); }
-  .pill.rejected, .pill.reported, .pill.interrupted { color: var(--muted); background: rgba(139,151,168,.12); }
-  .pill.detected, .pill.proposed, .pill.applying { color: var(--accent); background: rgba(76,141,255,.14); }
-  .pill.applying { animation: blink 1s infinite; }
-  @keyframes blink { 50% { opacity: .45; } }
-  .bars { display: flex; flex-direction: column; gap: 8px; }
-  .bar { display: grid; grid-template-columns: minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-size: 12.5px; }
-  .bar .track { height: 8px; border-radius: 5px; background: #222a35; overflow: hidden; display: flex; margin-top: 4px; }
-  .bar .track span { display: block; height: 100%; }
-  .bar .num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
-  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-  svg.chart { width: 100%; height: 150px; display: block; }
-  .callout { margin-top: 10px; padding: 9px 11px; border-radius: 9px; background: rgba(76,141,255,.09);
-    border: 1px solid rgba(76,141,255,.25); font-size: 12.5px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 0 8px 8px; }
-  td { padding: 8px; border-top: 1px solid var(--line); vertical-align: middle; }
-  td .what { font-weight: 600; } td .how { color: var(--muted); font-size: 12px; }
-  select, input[type=number], input[type=text] { font: inherit; font-size: 13px; color: var(--text);
-    background: #0b0e13; border: 1px solid var(--line); border-radius: 7px; padding: 5px 7px; }
-  input[type=number] { width: 58px; } input[type=text] { width: 120px; }
-  .saverow { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-  .saverow span { color: var(--muted); font-size: 12.5px; }
-  .empty { color: var(--muted); font-size: 13px; padding: 16px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; }
-  dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
-    padding: 0; width: min(640px, 94vw); }
-  dialog::backdrop { background: rgba(0,0,0,.55); }
-  .dlg { padding: 18px 20px; }
-  .dlg h3 { margin: 0 0 2px; font-size: 16px; } .dlg .meta { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
-  .kv { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; font-size: 12.5px; margin: 6px 0 14px; }
-  .kv dt { color: var(--muted); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
-  .tl { list-style: none; padding: 0; margin: 6px 0 14px; font-size: 12.5px; }
-  .tl li { padding: 3px 0 3px 14px; border-left: 2px solid var(--line); }
-  .dlg h4 { margin: 12px 0 2px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  .toast { position: fixed; right: 20px; bottom: 20px; background: var(--card2); border: 1px solid var(--accent);
-    border-radius: 12px; padding: 12px 14px; max-width: 360px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
-    transform: translateY(140%); transition: transform .3s ease; z-index: 10; }
-  .toast.show { transform: none; }
-  .toast b { display: block; margin-bottom: 2px; }
-  @media (max-width: 1050px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, 1fr); } }
-</style>
-</head>
-<body>
-<header>
-  <h1>Setup Check <span>· IT view</span></h1>
-  <span class="live" id="live"><i></i><span>connecting…</span></span>
-  <span class="spacer"></span>
-  <label class="toggle" title="Two weeks of made-up history from 180 devices, so the company-level charts have something to show. Your live incidents are always real.">
-    <input type="checkbox" id="fleet" checked /> Include simulated fleet
-  </label>
-  <button id="reseed" title="Regenerate the simulated fleet history">Re-seed fleet</button>
-  <button id="clearLive" title="Delete the incidents reported live by devices">Clear live</button>
-</header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Setup Check · IT view</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 17V9m5 8V5m5 12v-6m5 6V7" />
+          </svg>
+        </span>
+        <div>
+          <h1>Setup Check</h1>
+          <p class="muted">Digital employee experience, from the device side</p>
+        </div>
+      </div>
 
-<main>
-  <section class="kpis">
-    <div class="kpi"><div class="label">Incidents</div><b id="k-total">—</b><small id="k-total-sub">—</small></div>
-    <div class="kpi"><div class="label">Fixed remotely</div><b id="k-fixed">—</b><small id="k-fixed-sub">—</small></div>
-    <div class="kpi"><div class="label">Rejected by employees</div><b id="k-rej">—</b><small>the opt-out is real</small></div>
-    <div class="kpi"><div class="label">Escalated to IT</div><b id="k-esc">—</b><small>diagnostics already attached</small></div>
-    <div class="kpi"><div class="label">Time given back</div><b id="k-hours">—</b><small title="Each verified remote fix counts the minutes an employee would have lost raising a ticket or troubleshooting: 5 to 15 minutes depending on the issue (see the table below).">vs. raising a ticket each time</small></div>
-  </section>
+      <div class="toolbar">
+        <label class="field">
+          <span>Window</span>
+          <select id="days">
+            <option value="1">24 hours</option>
+            <option value="7">7 days</option>
+            <option value="14" selected>14 days</option>
+            <option value="30">30 days</option>
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="fleet" checked />
+          <span>Include simulated fleet</span>
+        </label>
+        <button id="refresh" class="btn">Refresh</button>
+      </div>
+    </header>
 
-  <div class="grid">
-    <div>
-      <section class="card">
-        <h2>Live from devices</h2>
-        <p class="sub">Every failure a device detects, with its diagnostics and what happened next. Click one for details.</p>
-        <div class="feed" id="feed"><div class="empty">Waiting for the first incident…</div></div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-overview" aria-selected="true" aria-controls="panel-overview" data-tab="overview">Overview</button>
+      <button role="tab" id="tab-reports" aria-selected="false" aria-controls="panel-reports" data-tab="reports">Reports</button>
+      <button role="tab" id="tab-people" aria-selected="false" aria-controls="panel-people" data-tab="people">People</button>
+      <button role="tab" id="tab-actions" aria-selected="false" aria-controls="panel-actions" data-tab="actions">Actions</button>
+    </nav>
+
+    <main>
+      <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+        <div class="kpis" id="kpis"></div>
+        <div class="split">
+          <section class="card">
+            <header class="card-head">
+              <h2>What breaks most</h2>
+              <p class="muted">Bar length is the share fixed remotely.</p>
+            </header>
+            <div id="breaks" class="bars"></div>
+          </section>
+          <section class="card">
+            <header class="card-head">
+              <h2>Volume</h2>
+              <p class="muted">Reports per day in the selected window.</p>
+            </header>
+            <div id="trend" class="trend"></div>
+          </section>
+        </div>
+        <section class="card">
+          <header class="card-head">
+            <h2>Latest reports</h2>
+            <p class="muted">Click a row to open it.</p>
+          </header>
+          <div class="table-wrap"><table id="recent" class="table"></table></div>
+        </section>
       </section>
-    </div>
-    <div>
-      <section class="card">
-        <h2>What breaks most</h2>
-        <p class="sub" id="issues-sub">Last 14 days · bar = share fixed remotely</p>
-        <div class="bars" id="issues"></div>
-        <div class="legend"><span><i style="background:var(--ok)"></i>fixed remotely</span><span><i style="background:var(--warn)"></i>escalated</span><span><i style="background:#3a4452"></i>other</span></div>
+
+      <section class="panel" id="panel-reports" role="tabpanel" aria-labelledby="tab-reports" hidden>
+        <div class="filters">
+          <label class="field grow">
+            <span>Search</span>
+            <input id="search" type="search" placeholder="employee, device, issue…" />
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select id="status"></select>
+          </label>
+          <label class="field">
+            <span>Section</span>
+            <select id="section"></select>
+          </label>
+          <button id="clear-employee" class="btn subtle" hidden></button>
+        </div>
+        <section class="card flush">
+          <div class="table-wrap tall"><table id="reports" class="table"></table></div>
+          <p class="table-note muted" id="reports-note"></p>
+        </section>
       </section>
-      <section class="card">
-        <h2>When it breaks</h2>
-        <p class="sub">Incidents per hour of the day, by area</p>
-        <svg class="chart" id="hours" viewBox="0 0 520 150" preserveAspectRatio="none"></svg>
-        <div class="legend" id="sections-legend"></div>
-        <div class="callout" id="premeeting" hidden></div>
+
+      <section class="panel" id="panel-people" role="tabpanel" aria-labelledby="tab-people" hidden>
+        <section class="card flush">
+          <header class="card-head padded">
+            <h2>People</h2>
+            <p class="muted">Every report is attached to a person. Click one to see their reports.</p>
+          </header>
+          <div class="table-wrap tall"><table id="people" class="table"></table></div>
+        </section>
       </section>
-      <section class="card">
-        <h2>Last 14 days</h2>
-        <p class="sub">Incidents per day, by area</p>
-        <svg class="chart" id="days" viewBox="0 0 520 150" preserveAspectRatio="none"></svg>
+
+      <section class="panel" id="panel-actions" role="tabpanel" aria-labelledby="tab-actions" hidden>
+        <section class="card flush">
+          <header class="card-head padded">
+            <h2>Action policies</h2>
+            <p class="muted">
+              What devices do when a check fails. <strong>Real</strong> runs on the device;
+              <strong>simulated</strong> only reports. Changes apply on the next poll.
+            </p>
+          </header>
+          <div class="table-wrap"><table id="policies" class="table"></table></div>
+          <div class="actions-footer">
+            <button id="save" class="btn primary">Save actions</button>
+            <span id="save-note" class="muted small"></span>
+          </div>
+        </section>
       </section>
-    </div>
-  </div>
+    </main>
 
-  <section class="card">
-    <h2>Remote actions</h2>
-    <p class="sub">What devices do when they detect each failure. <b>Auto</b> announces the fix and applies it after the countdown unless the employee rejects it; <b>Ask</b> waits for a yes; <b>Report only</b> just sends the diagnostics. <b>Real</b> runs the fix on the device when it can; <b>Simulated</b> goes through the motions and changes nothing.</p>
-    <table>
-      <thead><tr><th>Failure</th><th>Remote action</th><th>Mode</th><th>Countdown</th><th>Execution</th><th>Settings</th><th>Saves</th></tr></thead>
-      <tbody id="policies"></tbody>
-    </table>
-    <div class="saverow"><button class="primary" id="save">Save actions</button><span id="saved"></span></div>
-  </section>
-</main>
+    <div id="scrim" class="scrim" hidden></div>
+    <aside id="drawer" class="drawer" hidden aria-label="Report details"></aside>
 
-<dialog id="dlg"><div class="dlg" id="dlg-body"></div></dialog>
-<div class="toast" id="toast"></div>
-
-<script>
-const ICONS = {
-  network: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M2 8.8a16 16 0 0 1 20 0"/><path d="M5.5 12.3a11 11 0 0 1 13 0"/><path d="M9 15.8a6 6 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor" stroke="none"/></svg>',
-  audio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v3.5"/></svg>',
-  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="M15.5 11.5 21.5 8v8l-6-3.5z"/></svg>',
-  memory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></svg>',
-};
-const SECTION_NAMES = { network: "Network", audio: "Microphone", camera: "Camera", memory: "CPU & memory" };
-const SECTIONS = Object.keys(SECTION_NAMES);
-const color = (s) => getComputedStyle(document.documentElement).getPropertyValue(`--${s}`).trim() || "#888";
-const STATUS_TEXT = { detected: "detected", proposed: "proposed", applying: "applying…", fixed: "fixed ✓",
-  applied: "applied", escalated: "escalated", failed: "failed", rejected: "rejected", reported: "reported", resolved: "recovered", interrupted: "interrupted" };
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-let seen = new Set();
-let firstLoad = true;
-let policies = [];
-let incidents = [];
-
-function ago(t) {
-  const s = Date.now() / 1000 - t;
-  if (s < 60) return `${Math.max(1, Math.round(s))} s ago`;
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  const d = new Date(t * 1000);
-  if (s < 86400) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString([], { weekday: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-
-function renderFeed() {
-  const feed = $("feed");
-  if (!incidents.length) { feed.innerHTML = '<div class="empty">Waiting for the first incident…</div>'; return; }
-  const fresh = [];
-  feed.innerHTML = incidents.map((i) => {
-    const isNew = !seen.has(i.id) && !firstLoad;
-    if (isNew && !i.fleet) fresh.push(i);
-    const tags = (i.fleet ? "" : '<span class="tag live">live</span>') + (i.simulated ? '<span class="tag" title="Damage triggered on purpose from the panel">simulated damage</span>' : "") + (i.fleet ? '<span class="tag">simulated fleet</span>' : "");
-    const how = [i.device_name, i.action && i.status !== "reported" ? i.action : null, ago(i.created_at)].filter(Boolean).map(esc).join(" · ");
-    return `<div class="inc${isNew ? " fresh" : ""}" data-id="${esc(i.id)}">
-      <div class="ico" style="color:${color(i.section)};background:${color(i.section)}22">${ICONS[i.section] || ""}</div>
-      <div><div class="t1">${esc(i.title)}${tags}</div><div class="t2">${how}</div></div>
-      <span class="pill ${esc(i.status)}">${esc(STATUS_TEXT[i.status] || i.status)}${i.status === "fixed" && i.execution === "simulated" ? " (sim.)" : ""}</span>
-    </div>`;
-  }).join("");
-  incidents.forEach((i) => seen.add(i.id));
-  if (fresh.length) toast(fresh[0]);
-}
-
-let toastTimer = 0;
-function toast(i) {
-  const t = $("toast");
-  t.innerHTML = `<b>${esc(i.title)}</b><span style="color:var(--muted);font-size:12.5px">${esc(i.device_name || "a device")} · ${esc(SECTION_NAMES[i.section] || i.section)} · diagnostics received</span>`;
-  t.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
-}
-
-function renderStats(s) {
-  $("k-total").textContent = s.total.toLocaleString();
-  $("k-total-sub").textContent = `${s.devices} devices · ${s.days} days${s.live ? ` · ${s.live} live` : ""}`;
-  $("k-fixed").textContent = s.fix_rate == null ? "—" : `${Math.round(s.fix_rate * 100)}%`;
-  $("k-fixed-sub").textContent = `${s.fixed} fixes, verified on the device`;
-  $("k-rej").textContent = s.reject_rate == null ? "—" : `${Math.round(s.reject_rate * 100)}%`;
-  $("k-esc").textContent = s.escalated;
-  $("k-hours").textContent = `${s.hours_saved} h`;
-
-  const max = Math.max(1, ...s.by_issue.map((b) => b.count));
-  $("issues").innerHTML = s.by_issue.slice(0, 8).map((b) => {
-    const w = (b.count / max) * 100;
-    const f = b.count ? (b.fixed / b.count) * w : 0;
-    const e = b.count ? (b.escalated / b.count) * w : 0;
-    return `<div class="bar"><div><div>${esc(b.label)}</div><div class="track" style="width:${w}%">
-      <span style="width:${(f / w) * 100 || 0}%;background:var(--ok)"></span>
-      <span style="width:${(e / w) * 100 || 0}%;background:var(--warn)"></span>
-      <span style="flex:1;background:#3a4452"></span></div></div>
-      <div class="num">${b.count}</div></div>`;
-  }).join("") || '<div class="empty">No incidents yet</div>';
-
-  stacked($("hours"), s.per_hour.filter((h) => h.hour >= 7 && h.hour <= 19).map((h) => ({ label: `${h.hour}h`, sections: h.sections })));
-  stacked($("days"), s.per_day.map((d) => ({ label: d.day, sections: d.sections })));
-  $("sections-legend").innerHTML = SECTIONS.map((k) => `<span><i style="background:${color(k)}"></i>${SECTION_NAMES[k]}</span>`).join("");
-  const pm = $("premeeting");
-  if (s.total >= 30 && s.pre_meeting_share > 0.15) {
-    pm.hidden = false;
-    pm.innerHTML = `<b>${Math.round(s.pre_meeting_share * 100)}%</b> of failures surface in the 5 minutes before the hour, when people join calls (an even spread would be 8%). That is when the check runs.`;
-  } else pm.hidden = true;
-}
-
-function stacked(svg, cols) {
-  const W = 520, H = 150, pad = 18, n = cols.length;
-  const totals = cols.map((c) => SECTIONS.reduce((a, k) => a + (c.sections[k] || 0), 0));
-  const max = Math.max(1, ...totals);
-  const bw = (W / n) * 0.66;
-  let out = "";
-  cols.forEach((c, i) => {
-    const x = (W / n) * i + (W / n - bw) / 2;
-    let y = H - pad;
-    for (const k of SECTIONS) {
-      const v = c.sections[k] || 0;
-      if (!v) continue;
-      const h = (v / max) * (H - pad - 6);
-      y -= h;
-      out += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color(k)}"><title>${esc(c.label)}: ${v} ${SECTION_NAMES[k]}</title></rect>`;
-    }
-    if (n <= 14 || i % 2 === 0) out += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" fill="#8b97a8" font-size="9.5" text-anchor="middle">${esc(c.label)}</text>`;
-  });
-  svg.innerHTML = out;
-}
-
-function renderPolicies() {
-  $("policies").innerHTML = policies.map((p, i) => `<tr data-i="${i}">
-    <td><div class="what">${esc(p.label)}</div><div class="how">${esc(SECTION_NAMES[p.section])}</div></td>
-    <td>${esc(p.action)}</td>
-    <td><select data-k="mode">${[["auto", "Auto (opt-out)"], ["ask", "Ask first"], ["off", "Report only"]].map(([v, t]) => `<option value="${v}"${p.mode === v ? " selected" : ""}>${t}</option>`).join("")}</select></td>
-    <td><input type="number" min="1" max="30" data-k="seconds" value="${p.seconds}" /> s</td>
-    <td><select data-k="execution">${[["real", "Real"], ["simulated", "Simulated"]].map(([v, t]) => `<option value="${v}"${p.execution === v ? " selected" : ""}>${t}</option>`).join("")}</select></td>
-    <td>${Object.entries(p.params || {}).map(([k, v]) => `<label class="how">${esc(k)} <input type="${typeof v === "number" ? "number" : "text"}" data-param="${esc(k)}" value="${esc(v)}" /></label>`).join(" ") || '<span class="how">—</span>'}</td>
-    <td class="how">${p.minutes_saved ? `${p.minutes_saved} min` : "—"}</td>
-  </tr>`).join("");
-}
-
-$("save").addEventListener("click", async () => {
-  const rows = [...document.querySelectorAll("#policies tr")];
-  const body = rows.map((tr) => {
-    const p = policies[+tr.dataset.i];
-    const params = { ...(p.params || {}) };
-    tr.querySelectorAll("[data-param]").forEach((el) => {
-      params[el.dataset.param] = el.type === "number" ? Number(el.value) : el.value;
-    });
-    return { id: p.id, mode: tr.querySelector('[data-k="mode"]').value,
-      seconds: Number(tr.querySelector('[data-k="seconds"]').value), execution: tr.querySelector('[data-k="execution"]').value, params };
-  });
-  try {
-    policies = (await api("/api/policies", { method: "PUT", body: JSON.stringify({ policies: body }) })).policies;
-    renderPolicies();
-    $("saved").textContent = `Saved at ${new Date().toLocaleTimeString()}. Devices pick it up within 10 s.`;
-  } catch (e) { $("saved").textContent = `Could not save: ${e.message}`; }
-});
-
-$("feed").addEventListener("click", (e) => {
-  const row = e.target.closest(".inc");
-  if (!row) return;
-  const i = incidents.find((x) => x.id === row.dataset.id);
-  if (!i) return;
-  // One level of nesting (device, env) becomes "device · name" rows.
-  const flat = (o) => Object.entries(o || {}).flatMap(([k, v]) =>
-    v && typeof v === "object" && !Array.isArray(v) ? Object.entries(v).map(([k2, v2]) => [`${k} · ${k2}`, v2]) : [[k, v]]);
-  const show = (v) => (Array.isArray(v) ? v.join("; ") : v === null ? "—" : typeof v === "object" ? JSON.stringify(v) : v);
-  const kv = (o) => o && Object.keys(o).length ? `<dl class="kv">${flat(o).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(show(v))}</dd>`).join("")}</dl>` : '<p class="how">—</p>';
-  $("dlg-body").innerHTML = `
-    <h3>${esc(i.title)}</h3>
-    <div class="meta">${esc(i.device_name || "device")} · ${esc(i.department || "")} · ${esc(SECTION_NAMES[i.section] || i.section)} · ${new Date(i.created_at * 1000).toLocaleString()}${i.simulated ? " · simulated damage" : ""}${i.fleet ? " · simulated fleet" : ""}</div>
-    <h4>What happened</h4>
-    <ul class="tl">${(i.timeline || []).map((t) => `<li><b>${esc(STATUS_TEXT[t.status] || t.status)}</b> · ${new Date(t.t * 1000).toLocaleTimeString()}${t.note ? ` · ${esc(t.note)}` : ""}</li>`).join("")}</ul>
-    <h4>Action</h4>
-    <dl class="kv"><dt>Remote action</dt><dd>${esc(i.action || "—")}</dd><dt>Execution</dt><dd>${esc(i.execution || "—")}</dd><dt>Result</dt><dd>${esc(i.outcome || "—")}</dd>${i.duration_ms ? `<dt>Detection to fix</dt><dd>${(i.duration_ms / 1000).toFixed(1)} s</dd>` : ""}</dl>
-    <h4>Diagnostics at detection</h4>${kv(i.diagnostics)}
-    ${i.after ? `<h4>After the action</h4>${kv(i.after)}` : ""}
-    <div style="text-align:right"><button onclick="document.getElementById('dlg').close()">Close</button></div>`;
-  $("dlg").showModal();
-});
-
-$("fleet").addEventListener("change", () => refresh());
-$("reseed").addEventListener("click", async () => { await api("/api/fleet", { method: "POST" }); refresh(); });
-$("clearLive").addEventListener("click", async () => {
-  if (!confirm("Delete all incidents reported live by devices?")) return;
-  await api("/api/incidents", { method: "DELETE" }); seen = new Set(); refresh();
-});
-
-async function refresh() {
-  const fleet = $("fleet").checked;
-  try {
-    const [inc, s] = await Promise.all([
-      api(`/api/incidents?limit=50${fleet ? "" : "&live=1"}`),
-      api(`/api/stats?days=14&fleet=${fleet ? 1 : 0}`),
-    ]);
-    incidents = inc.incidents;
-    renderFeed();
-    renderStats(s);
-    firstLoad = false;
-    $("live").className = "live on";
-    $("live").querySelector("span").textContent = `live · ${new Date().toLocaleTimeString()}`;
-  } catch {
-    $("live").className = "live";
-    $("live").querySelector("span").textContent = "server unreachable";
-  }
-}
-
-(async () => {
-  try { policies = (await api("/api/policies")).policies; renderPolicies(); } catch {}
-  refresh();
-  setInterval(refresh, 2000);
-})();
-</script>
-</body>
+    <script src="/dashboard.js"></script>
+  </body>
 </html>

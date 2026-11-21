@@ -24,6 +24,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -96,8 +97,83 @@ def connect():
         );
         CREATE INDEX IF NOT EXISTS idx_created ON incidents(created_at);
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE IF NOT EXISTS employees (
+            device_id TEXT PRIMARY KEY,
+            employee_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT,
+            department TEXT,
+            office TEXT
+        );
     """)
     return db
+
+
+# ---------------------------------------------------------------- employees
+#
+# Every report belongs to a person, not a laptop. The fleet is simulated, so the
+# people are too: names are generated deterministically from the device id, which
+# keeps a device on the same employee across restarts.
+
+FIRST_NAMES = [
+    "Alice", "Marco", "Sara", "Luca", "Elena", "Tommaso", "Chiara", "Nicolas",
+    "Amélie", "Jonas", "Marta", "David", "Sofia", "Rémi", "Giulia", "Léa",
+    "Matteo", "Nina", "Adrien", "Beatrice", "Simon", "Camille", "Pietro", "Anna",
+    "Théo", "Valentina", "Lorenzo", "Julie", "Fabio", "Manon", "Stefan", "Elisa",
+]
+
+LAST_NAMES = [
+    "Rossi", "Müller", "Bernard", "Ferrari", "Meier", "Dubois", "Conti", "Schmid",
+    "Lefèvre", "Bianchi", "Weber", "Moreau", "Galli", "Huber", "Petit", "Romano",
+    "Keller", "Fontana", "Roux", "Brunner", "Costa", "Girard", "Fischer", "Marino",
+]
+
+ROLES = [
+    "Product Designer", "Backend Engineer", "Frontend Engineer", "Data Analyst",
+    "Account Executive", "Customer Success", "People Partner", "Finance Analyst",
+    "Engineering Manager", "Support Specialist", "Legal Counsel", "Recruiter",
+]
+
+OFFICES = ["Lausanne", "Zurich", "Geneva", "Remote"]
+
+
+def ensure_employee(db, device_id, department=None):
+    device_id = device_id or "unknown-device"
+    row = db.execute("SELECT * FROM employees WHERE device_id=?", (device_id,)).fetchone()
+    if row:
+        return dict(row)
+
+    rng = random.Random(device_id)
+    employee = {
+        "device_id": device_id,
+        "employee_id": f"EMP-{zlib.crc32(device_id.encode()) % 9000 + 1000}",
+        "name": f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}",
+        "role": rng.choice(ROLES),
+        "department": department or weighted(rng, DEPARTMENTS),
+        "office": rng.choice(OFFICES),
+    }
+    db.execute(
+        "INSERT OR IGNORE INTO employees(device_id, employee_id, name, role, department, office) "
+        "VALUES(?,?,?,?,?,?)",
+        (employee["device_id"], employee["employee_id"], employee["name"],
+         employee["role"], employee["department"], employee["office"]),
+    )
+    return employee
+
+
+def attach_employees(db, rows):
+    cache = {}
+    for row in rows:
+        device = row.get("device_id") or "unknown-device"
+        if device not in cache:
+            cache[device] = ensure_employee(db, device, row.get("department"))
+        employee = cache[device]
+        row["employee_id"] = employee["employee_id"]
+        row["employee_name"] = employee["name"]
+        row["employee_role"] = employee["role"]
+        row["employee_office"] = employee["office"]
+    db.commit()
+    return rows
 
 
 def get_policies(db):
@@ -285,6 +361,33 @@ def stats(db, days, include_fleet):
         d = r["department"] or "Other"
         by_dept[d] = by_dept.get(d, 0) + 1
 
+    # Per person: who keeps losing time, not just which laptop.
+    people = {}
+    for r in rows:
+        device = r["device_id"] or "unknown-device"
+        if device not in people:
+            employee = ensure_employee(db, device, r["department"])
+            people[device] = {
+                "device_id": device,
+                "employee_id": employee["employee_id"],
+                "name": employee["name"],
+                "role": employee["role"],
+                "department": employee["department"],
+                "office": employee["office"],
+                "incidents": 0,
+                "fixed": 0,
+                "rejected": 0,
+                "escalated": 0,
+                "minutes": 0,
+            }
+        person = people[device]
+        person["incidents"] += 1
+        person["fixed"] += r["status"] in DONE_OK
+        person["rejected"] += r["status"] == "rejected"
+        person["escalated"] += r["status"] in ("escalated", "failed")
+        if r["status"] in DONE_OK:
+            person["minutes"] += policies.get(r["issue"], {}).get("minutes_saved", 0)
+
     return {
         "days": days,
         "include_fleet": include_fleet,
@@ -303,6 +406,7 @@ def stats(db, days, include_fleet):
         "pre_meeting_share": round(pre_meeting_share, 3),
         "by_department": sorted(({"department": k, "count": v} for k, v in by_dept.items()),
                                 key=lambda d: -d["count"]),
+        "by_employee": sorted(people.values(), key=lambda p: -p["incidents"])[:200],
         "live": sum(1 for r in rows if not r["fleet"]),
     }
 
@@ -382,6 +486,8 @@ def seed_fleet(db, devices=180, days=14, per_device_day=0.45, rng_seed=7):
     db.executemany("""INSERT INTO incidents (id, fleet, device_id, device_name, department, section, issue,
         title, severity, simulated, status, action, execution, outcome, diagnostics, after, timeline,
         created_at, updated_at, duration_ms) VALUES (?,1,?,?,?,?,?,?,?,0,?,?,?,?,?,NULL,?,?,?,?)""", rows)
+    for dev_id, _, dept in fleet:
+        ensure_employee(db, dev_id, dept)
     db.commit()
     return len(rows)
 
@@ -437,20 +543,55 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if url.path in ("/dashboard.css", "/dashboard.js"):
+            name = os.path.basename(url.path)
+            try:
+                with open(os.path.join(HERE, name), "rb") as f:
+                    body = f.read()
+            except OSError:
+                return self.send_json({"error": "not found"}, 404)
+            self.send_response(200)
+            content_type = "text/css" if name.endswith(".css") else "text/javascript"
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path == "/api/health":
             return self.send_json({"ok": True, "time": time.time()})
+        if url.path == "/api/employees":
+            with lock:
+                rows = [dict(r) for r in db.execute("SELECT * FROM employees ORDER BY name")]
+            return self.send_json({"employees": rows})
         if url.path == "/api/policies":
             with lock:
                 return self.send_json({"policies": get_policies(db)})
         if url.path == "/api/incidents":
-            limit = max(1, min(500, int(q.get("limit", ["60"])[0])))
+            limit = max(1, min(2000, int(q.get("limit", ["60"])[0])))
             live_only = q.get("live", ["0"])[0] == "1"
+            employee = (q.get("employee", [""])[0] or "").strip()
+            where = []
+            args = []
+            if live_only:
+                where.append("fleet = 0")
+            if employee:
+                device_ids = [r["device_id"] for r in db.execute(
+                    "SELECT device_id FROM employees WHERE employee_id=? OR name=?",
+                    (employee, employee))]
+                if not device_ids:
+                    return self.send_json({"incidents": []})
+                where.append("device_id IN (%s)" % ",".join("?" * len(device_ids)))
+                args.extend(device_ids)
+            sql = "SELECT * FROM incidents "
+            if where:
+                sql += "WHERE " + " AND ".join(where) + " "
+            sql += "ORDER BY created_at DESC LIMIT ?"
+            args.append(limit)
             with lock:
                 close_stale(db)
-                rows = db.execute(
-                    "SELECT * FROM incidents " + ("WHERE fleet = 0 " if live_only else "") +
-                    "ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-            return self.send_json({"incidents": [row_dict(r) for r in rows]})
+                rows = db.execute(sql, args).fetchall()
+                incidents = attach_employees(db, [row_dict(r) for r in rows])
+            return self.send_json({"incidents": incidents})
         if url.path == "/api/stats":
             days = max(1, min(60, int(q.get("days", ["14"])[0])))
             fleet = q.get("fleet", ["1"])[0] == "1"
