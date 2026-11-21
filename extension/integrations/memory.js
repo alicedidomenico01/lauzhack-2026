@@ -1,0 +1,86 @@
+// Machine: device class plus event-loop lag, sampled continuously.
+// Lag is an honest proxy for "this machine is struggling right now".
+
+const WINDOW_MS = 600;
+const INTERVAL_MS = 2500;
+
+async function measureLag(ms) {
+  const drifts = [];
+  let last = performance.now();
+  const end = last + ms;
+
+  while (performance.now() < end) {
+    await new Promise((r) => setTimeout(r, 100));
+    const now = performance.now();
+    drifts.push(Math.max(0, now - last - 100));
+    last = now;
+  }
+
+  return drifts.length ? drifts.reduce((a, b) => a + b, 0) / drifts.length : 0;
+}
+
+export function mountMemory(root, { setStatus }) {
+  root.innerHTML = `
+    <div class="metrics">
+      <div><dt>Device RAM</dt><dd data-ram>—</dd></div>
+      <div><dt>Cores</dt><dd data-cores>—</dd></div>
+      <div><dt>UI lag</dt><dd data-lag>—</dd></div>
+      <div><dt>Samples</dt><dd data-count>0</dd></div>
+    </div>
+    <p class="verdict" data-verdict></p>
+    <p class="hint">A browser cannot read system memory; lag is the honest proxy. Real pressure needs a local helper (vm_stat).</p>
+  `;
+
+  const ui = {
+    ram: root.querySelector("[data-ram]"),
+    cores: root.querySelector("[data-cores]"),
+    lag: root.querySelector("[data-lag]"),
+    count: root.querySelector("[data-count]"),
+    verdict: root.querySelector("[data-verdict]"),
+  };
+
+  ui.ram.textContent = navigator.deviceMemory ? `~${navigator.deviceMemory} GB` : "hidden";
+  ui.cores.textContent = navigator.hardwareConcurrency || "—";
+
+  let timer = 0;
+  let running = false;
+  let samples = 0;
+
+  async function cycle() {
+    if (running) return;
+    running = true;
+
+    const lag = await measureLag(WINDOW_MS);
+    samples++;
+    running = false;
+
+    ui.lag.textContent = `${lag.toFixed(0)} ms/s`;
+    ui.count.textContent = String(samples);
+
+    if (lag > 80) {
+      ui.verdict.className = "verdict bad";
+      ui.verdict.textContent = "Struggling right now: calls freeze, typing lags.";
+      setStatus("memory", "bad", "struggling");
+    } else if (lag > 30) {
+      ui.verdict.className = "verdict warn";
+      ui.verdict.textContent = "Mild stutter. Something is competing for the CPU.";
+      setStatus("memory", "warn", "attention");
+    } else {
+      ui.verdict.className = "verdict ok";
+      ui.verdict.textContent = "Responsive. Nothing is starving the machine.";
+      setStatus("memory", "ok", "ok");
+    }
+  }
+
+  return {
+    start() {
+      if (timer) return;
+      cycle();
+      timer = setInterval(cycle, INTERVAL_MS);
+    },
+    stop() {
+      clearInterval(timer);
+      timer = 0;
+    },
+  };
+}

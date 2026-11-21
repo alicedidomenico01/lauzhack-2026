@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Setup Check",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Checks that your microphone actually picks up sound, before you join a meeting.",
   "permissions": ["sidePanel"],
   "host_permissions": ["https://www.gstatic.com/*"],

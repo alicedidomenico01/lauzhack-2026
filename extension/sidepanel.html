@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <title>Setup Check</title>
-    <link rel="stylesheet" href="sidepanel.css" />
+    <link rel="stylesheet" href="styles/sidepanel.css" />
   </head>
   <body>
     <header>
       <h1>Setup Check</h1>
-      <p class="sub">Four things that break a meeting. Checked locally.</p>
+      <p class="sub">Four things that break a meeting. Measured live, locally.</p>
     </header>
 
-    <!-- NETWORK -->
+    <!-- One shell per integration. The body is filled by its module. -->
     <section class="row" data-key="network">
       <button class="row-head" aria-expanded="true" aria-controls="body-network">
         <span class="row-icon" aria-hidden="true">
@@ -23,31 +23,16 @@
           </svg>
         </span>
         <span class="row-title">Network</span>
-        <span class="row-status" data-status>—</span>
+        <span class="row-status" data-status>starting</span>
         <span class="chev" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
         </span>
       </button>
-      <div class="row-body" id="body-network">
-        <div class="row-body-inner">
-          <dl class="metrics">
-            <div><dt>Latency</dt><dd id="net-rtt">—</dd></div>
-            <div><dt>Jitter</dt><dd id="net-jitter">—</dd></div>
-            <div><dt>Failures</dt><dd id="net-loss">—</dd></div>
-            <div><dt>Connection</dt><dd id="net-type">—</dd></div>
-          </dl>
-          <button class="primary" data-run="network">Measure network</button>
-          <p class="verdict" id="net-verdict"></p>
-          <p class="hint" id="net-hint"></p>
-        </div>
-      </div>
+      <div class="row-body" id="body-network"><div class="row-body-inner" data-mount></div></div>
     </section>
 
-    <!-- AUDIO -->
     <section class="row" data-key="audio">
-      <button class="row-head" aria-expanded="false" aria-controls="body-audio">
+      <button class="row-head" aria-expanded="true" aria-controls="body-audio">
         <span class="row-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="2.5" width="6" height="11" rx="3" />
@@ -56,29 +41,14 @@
           </svg>
         </span>
         <span class="row-title">Microphone</span>
-        <span class="row-status" data-status>—</span>
+        <span class="row-status" data-status>starting</span>
         <span class="chev" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
         </span>
       </button>
-      <div class="row-body" id="body-audio">
-        <div class="row-body-inner">
-          <select id="audio-device" aria-label="Microphone"></select>
-          <div class="meter" aria-hidden="true"><div class="meter-fill" id="meter-fill"></div></div>
-          <div class="meter-readout">
-            <span id="mic-level">—</span>
-            <span id="mic-state" class="state">idle</span>
-          </div>
-          <button class="primary" data-run="audio">Run check (3 s)</button>
-          <p class="verdict" id="mic-verdict"></p>
-          <p class="hint" id="mic-hint"></p>
-        </div>
-      </div>
+      <div class="row-body" id="body-audio"><div class="row-body-inner" data-mount></div></div>
     </section>
 
-    <!-- CAMERA -->
     <section class="row" data-key="camera">
       <button class="row-head" aria-expanded="false" aria-controls="body-camera">
         <span class="row-icon" aria-hidden="true">
@@ -88,24 +58,14 @@
           </svg>
         </span>
         <span class="row-title">Camera</span>
-        <span class="row-status" data-status>—</span>
+        <span class="row-status" data-status>idle</span>
         <span class="chev" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
         </span>
       </button>
-      <div class="row-body" id="body-camera">
-        <div class="row-body-inner">
-          <canvas id="cam-preview" width="240" height="135"></canvas>
-          <button class="primary" data-run="camera">Check camera</button>
-          <p class="verdict" id="cam-verdict"></p>
-          <p class="hint" id="cam-hint"></p>
-        </div>
-      </div>
+      <div class="row-body" id="body-camera"><div class="row-body-inner" data-mount></div></div>
     </section>
 
-    <!-- MEMORY -->
     <section class="row" data-key="memory">
       <button class="row-head" aria-expanded="false" aria-controls="body-memory">
         <span class="row-icon" aria-hidden="true">
@@ -115,31 +75,18 @@
           </svg>
         </span>
         <span class="row-title">Memory</span>
-        <span class="row-status" data-status>—</span>
+        <span class="row-status" data-status>starting</span>
         <span class="chev" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
         </span>
       </button>
-      <div class="row-body" id="body-memory">
-        <div class="row-body-inner">
-          <dl class="metrics">
-            <div><dt>Device RAM</dt><dd id="mem-ram">—</dd></div>
-            <div><dt>Cores</dt><dd id="mem-cores">—</dd></div>
-            <div><dt>UI lag</dt><dd id="mem-lag">—</dd></div>
-          </dl>
-          <button class="primary" data-run="memory">Check machine</button>
-          <p class="verdict" id="mem-verdict"></p>
-          <p class="hint" id="mem-hint"></p>
-        </div>
-      </div>
+      <div class="row-body" id="body-memory"><div class="row-body-inner" data-mount></div></div>
     </section>
 
     <footer>
       <p>Everything runs in this panel. Nothing is recorded or uploaded.</p>
     </footer>
 
-    <script src="sidepanel.js"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>

@@ -1,8 +1,7 @@
 # Setup Check — Chrome extension
 
 A side panel with four collapsible checks that answer: **what will break in this
-meeting?** Each check measures something real on the machine. No backend, no
-storage, nothing uploaded.
+meeting?** Everything runs live and locally. No backend, no storage, no upload.
 
 ## There is nothing to deploy
 
@@ -14,50 +13,58 @@ Load the folder **unpacked**; Chrome runs it from disk. No build, no store.
 
 After pulling changes: ↻ **Reload** on the extension card, then reopen the panel.
 
-A teammate with a fresh clone does the same three clicks. Publishing to the
-Chrome Web Store ($5 + days of review) is the only thing resembling deployment,
-and it is not worth it here.
+## Layout
 
-## The four sections
+```
+extension/
+  manifest.json          MV3. Permissions: sidePanel + gstatic.com for the probe
+  background.js          opens the panel on icon click (no audio here)
+  sidepanel.html         the four section shells
+  styles/sidepanel.css
+  app.js                 wiring only: mounts modules, starts/stops them
+  ui/
+    accordion.js         open/close + status pill
+    ring.js              circular gauge
+  integrations/
+    network.js           continuous RTT/jitter/failure sampling
+    audio.js             live mic meter + automatic verdict
+    camera.js            live preview + exposure/backlight analysis
+    memory.js            device class + event-loop lag
+```
 
-| Section | Real input | Verdict | What we cannot do |
-|---|---|---|---|
-| **Network** | 6 timed requests to a 204 endpoint: median RTT, jitter, failures, plus `navigator.connection` type/downlink | stable / shaky / unreliable | A browser **cannot enumerate nearby Wi-Fi networks or their signal**. Comparing "my hotspot is stronger" needs a native helper (see below) |
-| **Microphone** | `getUserMedia` + AudioContext, 100 ms RMS sampling, 3 s test | picks you up / silent | We cannot change the device Meet is using — the panel says so |
-| **Camera** | one frame → mean luminance + centre/edge ratio | fine / too dark / backlit | We cannot change your room lighting |
-| **Memory** | `navigator.deviceMemory`, `hardwareConcurrency`, event-loop lag | responsive / stutter / struggling | A browser **cannot read system memory**. Real pressure needs a native helper |
+Each integration exports `mountX(root, { setStatus })` and returns
+`{ start(), stop() }`. It builds its own DOM, so adding a fifth check means one
+new file and one line in `app.js`.
 
-Every check also has a small **action** where one honestly exists: the mic check
-switches to the other input and retests by itself, and tells you to pick it in
-Meet. The rest report and point.
+## Behaviour
 
-## Where things run
+- **Network** samples 3 probes every 5 s and animates the ring. No click.
+- **Microphone** opens on panel start, shows a live meter, and decides by
+  itself: sound within the last 3 s = ok, 12 s of silence = it switches to the
+  other input once and reports which one works.
+- **Camera** starts on its own **only if camera permission already exists**;
+  otherwise it starts when you first open the section (first use always needs a
+  prompt). Live preview, verdict recomputed every 700 ms.
+- **Memory** reports device RAM, cores and event-loop lag every 2.5 s.
+- Everything stops when the panel is hidden, so the mic and camera LEDs are
+  honest.
 
-| File | Role |
-|---|---|
-| `manifest.json` | MV3. Permissions: `sidePanel` + host access to `gstatic.com` for the probe |
-| `background.js` | opens the panel on icon click. No audio: a service worker cannot hold a mic stream |
-| `sidepanel.html/.css/.js` | the UI, all detectors, all decisions |
+## What each check can and cannot see
 
-## Feasibility notes (the honest version)
+| Section | Real input | Cannot |
+|---|---|---|
+| Network | RTT, jitter, failures, `navigator.connection` | **Other networks around you.** No browser API enumerates Wi-Fi or binds a request to another interface — a worker thread does not help, it is a permission boundary, not a concurrency one |
+| Microphone | `getUserMedia` + AudioContext RMS | Change the device Meet uses |
+| Camera | one frame every 700 ms → luminance, centre/edge ratio | Change your lighting |
+| Memory | `deviceMemory`, cores, event-loop lag | Read system memory |
 
-- **"Your hotspot is stronger than this Wi-Fi"** — not collectable from a
-  browser. Chrome exposes no Wi-Fi scanning API. Two options later: (a) run the
-  network check once per network and compare the stored results, or (b) a
-  **native messaging host** — a tiny local binary that runs
-  `system_profiler SPAirPortDataType` / `wdutil` and returns interface type,
-  current SSID and link quality. That is a real Nexthink-shaped piece of work,
-  and it is also the only way to get **real memory** (`vm_stat`) and real CPU.
-- **Meet's own mic state** — readable from the DOM once we add a content script
-  on `meet.google.com`. That is the fragile step; it comes after these four
-  checks work.
-- **Remote action** — a Nexthink-style fix (restart an audio service, switch the
-  OS default input) needs the same native host. Until then we simulate the
-  *process*, never the result: we say what we would do, we do not claim we did it.
+The honest fix for the two "cannot" rows is a **native messaging host** — a
+small local binary that runs `networkQuality -c` (built into macOS), CoreWLAN
+scans, `vm_stat` and audio-device switching. That is also the bridge from
+"detect" to "act".
 
 ## Next
 
-1. Verify all four on a real laptop with a headset (dead input → retest → pass).
-2. Content script: show the panel only on Meet tabs, read mute state.
-3. Native helper: interface type, SSID, `vm_stat`, default audio device — the
-   bridge from "detect" to "act".
+1. Verify all four on a real laptop with a headset.
+2. Content script on `meet.google.com`: show the panel only there, read mute state.
+3. Native helper: `networkQuality`, SSID + interface, `vm_stat`, default input.
