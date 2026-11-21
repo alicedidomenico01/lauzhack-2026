@@ -48,8 +48,9 @@ new file and one line in `app.js`.
   switch in the OS, then use **Retest after switching Wi-Fi**. If the helper
   reports a changed Wi-Fi name, the retest starts automatically. The badge
   compares actual readings. The demo toggle is explicitly labeled and never
-  feeds the live comparison. Without a reported SSID, the panel shows
-  **Wi-Fi name unavailable**.
+  feeds the live comparison. Without a reported SSID the panel shows the fixed
+  label `freewifi-epfl`; it is a stage label, not a reading. **Switch Network**
+  does nothing: a browser cannot change Wi-Fi, so the presenter explains it.
 - **Microphone** opens on panel start with raw audio (no echo cancellation,
   noise suppression or auto gain, which would hide what we measure). It tells
   apart, mostly without the user speaking:

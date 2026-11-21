@@ -19,6 +19,18 @@ export function initAccordion(onToggle) {
   });
 }
 
+// Integrations pass human words too ("blocked", "busy elsewhere", "no signal"),
+// so map them onto the five colours we actually have.
+export function normalizeLevel(level) {
+  if (!level) return "idle";
+  if (DOT_COLORS[level]) return level;
+  const text = String(level).toLowerCase();
+  if (/^(ok|fixed|good|works)$/.test(text)) return "ok";
+  if (/(busy|starting|measuring|listening|acting|sampling)/.test(text)) return "busy";
+  if (/(blocked|missing|error|no signal|unavailable|fail|offline|struggling)/.test(text)) return "bad";
+  return "warn";
+}
+
 // Takes the element, not a selector: the element is resolved once at mount,
 // so a bad selector can only fail loudly, never silently.
 export function paintDot(dot, level, text) {
@@ -26,7 +38,7 @@ export function paintDot(dot, level, text) {
     console.error("[setup-check] status dot element is missing");
     return;
   }
-  const state = level || "idle";
+  const state = normalizeLevel(level);
   const color = DOT_COLORS[state] || DOT_COLORS.idle;
   dot.dataset.level = state;
   dot.style.background = color;

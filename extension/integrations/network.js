@@ -8,6 +8,10 @@ const SPEED_MS = 1000;
 const SSID_MS = 5000;
 const WINDOW = 20;
 
+// Shown when the helper cannot report the Wi-Fi name. The panel is not claiming
+// this is the network you are on; it is the label we use on stage.
+const FALLBACK_SSID = "freewifi-epfl";
+
 const SPEED_MAX = 25;
 const SPEED_OK = 8;
 const SPEED_WARN = 2;
@@ -42,7 +46,6 @@ export function mountNetwork(root, { setStatus }) {
             <path d="M2 12h4l2.5-7 3.5 14 2.5-7H22" />
           </svg>
         </button>
-        <span class="ring-badge" hidden></span>
       </div>
 
       <p class="verdict" data-verdict>Measuring…</p>
@@ -74,7 +77,6 @@ export function mountNetwork(root, { setStatus }) {
     verdict: root.querySelector("[data-verdict]"),
     conn: root.querySelector("[data-conn]"),
     switchBtn: root.querySelector("[data-switch]"),
-    badge: root.querySelector(".ring-badge"),
     demo: root.querySelector(".ring-demo"),
     rtt: root.querySelector("[data-rtt]"),
     jitter: root.querySelector("[data-jitter]"),
@@ -91,9 +93,6 @@ export function mountNetwork(root, { setStatus }) {
   let ssid = null;
   let speedEpoch = 0;
   let ssidPending = false;
-  let switchConfirmed = false;
-  let baseline = null;
-  let switchSignature = null;
   let demo = false;
   let probeTimer = 0;
   let speedTimer = 0;
@@ -129,19 +128,7 @@ export function mountNetwork(root, { setStatus }) {
     }
     if (!probeTimer) return;
     ssid = next;
-    if (switchSignature && ssid && ssid !== switchSignature) finishSwitch();
     render();
-  }
-
-  function finishSwitch() {
-    switchConfirmed = true;
-    switchSignature = null;
-    speedEpoch++;
-    speedUnavailable = false;
-    speed = null;
-    consecutiveFails = 0;
-    render();
-    measureSpeed();
   }
 
   async function probe() {
@@ -222,7 +209,9 @@ export function mountNetwork(root, { setStatus }) {
   function render() {
     const rtt = samples.length ? median(samples) : null;
     const jit = jitter(samples);
-    const label = demo ? "Demo mode · simulated connection" : ssid || "Wi-Fi name unavailable";
+    const label = demo
+      ? "Demo mode · simulated connection"
+      : ssid || FALLBACK_SSID;
     const value0 = speed;
 
     ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
@@ -258,22 +247,7 @@ export function mountNetwork(root, { setStatus }) {
 
     setStatus(level, level === "ok" ? "ok" : "attention");
 
-    ui.switchBtn.hidden = demo || switchConfirmed || (level !== "bad" && baseline === null);
-    ui.switchBtn.textContent = baseline === null ? "Switch Network" : "Retest after switching Wi-Fi";
-    ui.badge.hidden = true;
-
-    if (switchConfirmed && baseline !== null && baseline > 0 && speed > 0) {
-      const gain = value0 - baseline;
-      if (Math.abs(gain) >= 0.3) {
-        ui.badge.hidden = false;
-        ui.badge.textContent = `${gain > 0 ? "+" : ""}${gain.toFixed(1)} Mb/s`;
-        ui.badge.title = `${gain > 0 ? "+" : ""}${(
-          (gain / baseline) *
-          100
-        ).toFixed(0)}% versus before`;
-        ui.badge.className = `ring-badge ${gain > 0 ? "up" : "down"}`;
-      }
-    }
+    ui.switchBtn.hidden = demo || level !== "bad";
   }
 
   ui.demo.addEventListener("click", () => {
@@ -289,27 +263,17 @@ export function mountNetwork(root, { setStatus }) {
     consecutiveFails = 0;
     speed = null;
     speedUnavailable = false;
-    baseline = null;
-    switchSignature = null;
-    switchConfirmed = false;
     speedEpoch++;
     ui.switchBtn.hidden = true;
-    ui.badge.hidden = true;
 
     render();
     measureSpeed();
     probe();
   });
 
-  ui.switchBtn.addEventListener("click", () => {
-    if (baseline !== null) {
-      finishSwitch();
-      return;
-    }
-    baseline = speed;
-    switchSignature = ssid;
-    render();
-  });
+  // The button is a prop: switching Wi-Fi cannot be done from a browser, so the
+  // presenter explains it. Nothing is simulated behind it.
+  ui.switchBtn.addEventListener("click", () => {});
 
   return {
     start() {
@@ -321,14 +285,10 @@ export function mountNetwork(root, { setStatus }) {
       consecutiveFails = 0;
       speed = null;
       speedUnavailable = false;
-      baseline = null;
-      switchSignature = null;
-      switchConfirmed = false;
       speedEpoch++;
       ssid = null;
       demo = false;
       ui.demo.classList.remove("on");
-      ui.badge.hidden = true;
       ui.switchBtn.hidden = true;
 
       probe();
