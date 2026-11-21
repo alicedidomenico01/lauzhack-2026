@@ -1,4 +1,5 @@
 const INTERVAL_MS = 1000;
+const CPU_SMOOTHING = 0.35;
 const CRITICAL_FREE_PERCENT = 10;
 const WARNING_FREE_PERCENT = 20;
 const HISTORY_SIZE = 6;
@@ -32,6 +33,7 @@ export function mountMemory(root, { setStatus }) {
   const memoryValue = root.querySelector("[data-mem]");
   const verdict = root.querySelector("[data-verdict]");
   let previousCpu = null;
+  let smoothedCpu = null;
   let memoryHistory = [];
   let timer = 0;
   let generation = 0;
@@ -50,8 +52,15 @@ export function mountMemory(root, { setStatus }) {
     if (run !== generation) return;
 
     const processors = cpuInfo.value?.processors;
-    const cpu = cpuLoad(previousCpu, processors);
+    const instantCpu = cpuLoad(previousCpu, processors);
     previousCpu = processors;
+    // One-second windows swing hard on a multi-core machine; smooth the display.
+    smoothedCpu = instantCpu === null
+      ? null
+      : smoothedCpu === null
+        ? instantCpu
+        : smoothedCpu * (1 - CPU_SMOOTHING) + instantCpu * CPU_SMOOTHING;
+    const cpu = smoothedCpu;
     const { availableCapacity, capacity } = memoryInfo.value ?? {};
     const free = capacity > 0 && availableCapacity >= 0 && availableCapacity <= capacity
       ? availableCapacity / capacity * 100
