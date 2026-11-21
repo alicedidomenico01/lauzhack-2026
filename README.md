@@ -13,8 +13,6 @@ Our project is made of two different parts:
 | `central/` | The IT side: incident store, dashboard, action policies | `python3 central/server.py` → http://localhost:8787 |
 | `extension/native/` | Optional macOS helper for the fixes a browser cannot do | `extension/native/install.sh <extension-id>` |
 
-Standard library Python and plain JS: no build, no `npm install`, no `pip install`.
-
 ## The loop
 
 Every failure, real or simulated, takes the same path (`extension/lib/remedy.js`):
@@ -186,8 +184,7 @@ simulated, and the panel says the helper is off.
 ## Limits worth knowing
 
 - A browser cannot read the Wi-Fi SSID, enumerate nearby networks, or bind a
-  request to another interface. That is a permission boundary, not a concurrency
-  problem: a worker thread does not help. The helper is the only way through.
+  request to another interface.
 - A browser cannot change networks, so the network alert only suggests it.
 - Speed is measured against a test server, not the actual call quality.
 - Seeded history is generated. Only rows marked `live` or `demo` come from this
