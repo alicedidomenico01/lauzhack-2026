@@ -45,7 +45,8 @@ export function mountMemory(root, api) {
   let timer = 0;
   let generation = 0;
   let damaged = false;
-  let top = null; // { name, cpu } from the helper, when installed
+  let topCpu = null; // { name, cpu } from the helper, when installed
+  let topMem = null; // { name, mb } the process holding the most memory
   let topAt = 0;
   let lastCpu = null;
   let lastFree = null;
@@ -107,7 +108,8 @@ export function mountMemory(root, api) {
     if (!damaged && Date.now() - topAt > TOP_REFRESH_MS) {
       topAt = Date.now();
       helper({ cmd: "stats" }, 4000).then((r) => {
-        if (r?.top) top = { name: r.top, cpu: r.top_cpu };
+        if (r?.top) topCpu = { name: r.top, cpu: r.top_cpu };
+        if (r?.top_mem) topMem = { name: r.top_mem, mb: r.top_mem_mb };
       });
     }
 
@@ -126,7 +128,8 @@ export function mountMemory(root, api) {
     }
   }
 
-  const culprit = () => (damaged ? SIMULATED_CULPRIT : top);
+  // CPU trouble blames the busiest process; memory trouble blames the biggest.
+  const culprit = (key) => (damaged ? SIMULATED_CULPRIT : key === "lowmem" ? topMem : topCpu);
 
   function diagnostics() {
     const app = culprit();
@@ -135,13 +138,14 @@ export function mountMemory(root, api) {
       availableMemoryPercent: lastFree === null ? null : Math.round(lastFree),
       availableMemory: memoryValue.textContent,
       cores: navigator.hardwareConcurrency ?? null,
-      topProcess: app ? `${app.name} (${app.cpu}% of one core)` : "unknown (no helper)",
+      topProcess: topCpu ? `${topCpu.name} (${topCpu.cpu}% of one core)` : "unknown (no helper)",
+      topMemory: topMem ? `${topMem.name} (${topMem.mb} MB)` : "unknown (no helper)",
       simulatedDamage: damaged,
     };
   }
 
   function issue(key) {
-    const app = culprit();
+    const app = culprit(key);
     return {
       key,
       severity: "bad",

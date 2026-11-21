@@ -393,6 +393,7 @@ function renderPolicies() {
     [
       ["auto", "Auto (opt-out)"],
       ["ask", "Ask first"],
+      ["suggest", "Suggest only"],
       ["off", "Report only"],
     ].forEach(([value, label]) => mode.append(new Option(label, value)));
     mode.value = policy.mode;
@@ -427,6 +428,17 @@ function renderPolicies() {
     tr.children[2].append(mode);
     tr.children[3].append(seconds);
     tr.children[4].append(execution);
+
+    // "Suggest only" and "Report only" have nothing to time and nothing to run.
+    const syncRow = () => {
+      const quiet = mode.value === "off" || mode.value === "suggest";
+      seconds.disabled = quiet;
+      execution.disabled = quiet;
+      tr.classList.toggle("muted-row", quiet);
+    };
+    mode.addEventListener("change", syncRow);
+    syncRow();
+
     body.append(tr);
   }
   table.append(body);

@@ -88,7 +88,7 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     const action = issue.action;
     // A suggestion has nothing to apply: it is shown, reported, and closed when
     // the problem goes away.
-    const suggestOnly = !!issue.suggestOnly && !userInitiated;
+    const suggestOnly = (!!issue.suggestOnly || policy.mode === "suggest") && !userInitiated;
     const willAct = !suggestOnly && !!action && (userInitiated || policy.mode !== "off");
 
     send("POST", "/api/incidents", {

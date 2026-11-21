@@ -42,10 +42,10 @@ DAY = 86400
 #              simulated = go through the motions, change nothing
 DEFAULT_POLICIES = [
     {"id": "network.slow", "section": "network", "label": "Slow or no connection",
-     "action": "Switch to a better Wi-Fi network", "mode": "auto", "seconds": 3,
+     "action": "Suggest a better network (no action is applied)", "mode": "suggest", "seconds": 3,
      "execution": "simulated", "params": {"targetNetwork": "eduroam"}, "minutes_saved": 12},
     {"id": "audio.dead", "section": "audio", "label": "Microphone sends no sound",
-     "action": "Restore the microphone (input volume to 75%)", "mode": "auto", "seconds": 3,
+     "action": "Restore the microphone", "mode": "auto", "seconds": 3,
      "execution": "real", "params": {"inputVolume": 75}, "minutes_saved": 15},
     {"id": "audio.wrongdefault", "section": "audio", "label": "System microphone is dead, another one works",
      "action": "Make the working microphone the system default", "mode": "auto", "seconds": 3,
@@ -70,7 +70,7 @@ DEFAULT_POLICIES = [
      "execution": "simulated", "params": {}, "minutes_saved": 8},
 ]
 
-MODES = {"auto", "ask", "off"}
+MODES = {"auto", "ask", "off", "suggest"}
 EXECUTIONS = {"real", "simulated"}
 STATUSES = {"detected", "proposed", "applying", "fixed", "applied", "escalated",
             "rejected", "failed", "reported", "resolved", "interrupted"}

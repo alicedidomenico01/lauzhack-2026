@@ -157,6 +157,21 @@ def top_process():
     return {"top": None, "top_cpu": None}
 
 
+def top_memory():
+    """The process holding the most resident memory, in MB."""
+    out = run(["ps", "-A", "-o", "rss=,comm=", "-m"])
+    for line in out.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            kb = int(parts[0])
+        except ValueError:
+            continue
+        return {"top_mem": parts[1].rsplit("/", 1)[-1][:40], "top_mem_mb": round(kb / 1024)}
+    return {"top_mem": None, "top_mem_mb": None}
+
+
 def memory_free_percent():
     """Free + inactive pages as a share of physical memory."""
     total_out = run(["sysctl", "-n", "hw.memsize"]).strip()
@@ -187,6 +202,7 @@ def memory_free_percent():
 def stats():
     payload = {"cpu_percent": total_cpu_percent()}
     payload.update(top_process())
+    payload.update(top_memory())
     payload["memory_free_percent"] = memory_free_percent()
     payload["cores"] = run(["sysctl", "-n", "hw.ncpu"]).strip() or None
     return payload
