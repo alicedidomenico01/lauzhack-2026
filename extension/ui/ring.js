@@ -1,19 +1,19 @@
-// A circular gauge. Score 0..100, rendered as a stroke offset so the change
-// animates in CSS instead of JS.
+// A circular gauge with the figure inside the circle.
+// Score 0..100, rendered as a stroke offset so the change animates in CSS.
 
 const CIRCUMFERENCE = 2 * Math.PI * 34;
 
 export function createRing() {
   const wrap = document.createElement("div");
-  wrap.className = "ring-wrap";
+  wrap.className = "ring";
   wrap.innerHTML = `
-    <svg class="ring" viewBox="0 0 80 80" aria-hidden="true">
+    <svg viewBox="0 0 80 80" aria-hidden="true">
       <circle class="bg" cx="40" cy="40" r="34"></circle>
       <circle class="fg" cx="40" cy="40" r="34"></circle>
     </svg>
     <div class="ring-figure">
       <span class="ring-value">—</span>
-      <span class="ring-label">waiting</span>
+      <span class="ring-label">Mb/s</span>
     </div>
   `;
 

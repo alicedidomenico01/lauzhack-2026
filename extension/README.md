@@ -38,10 +38,15 @@ new file and one line in `app.js`.
 
 ## Behaviour
 
-- **Network** probes once every 500 ms and animates one ring: the number inside
-  is the browser's own throughput estimate (Mb/s, capped at "10+"), the ring
-  colour is the quality score from latency + jitter + failures. Everything else
-  lives behind a **Details** disclosure.
+- **Network** probes latency every 500 ms and measures real download speed
+  every 12 s (500 KB from a CORS-enabled endpoint). The ring is centred, shows
+  the speed inside it, and fills at **2 Mb/s**; colour thresholds are
+  1.5 Mb/s (green) and 0.6 Mb/s (amber, below that red). Under the verdict sits
+  the connection type ("Wi-Fi · 4G"). When red, a **Switch Network** button
+  appears: Chrome cannot switch Wi-Fi, so it tells you to use the OS menu and
+  then shows a live **±% speed** badge against the speed you had before
+  switching. The small icon top-right of the ring toggles a **demo mode** that
+  fakes a shaky connection. Everything else lives behind **Details**.
 - **Microphone** opens on panel start, shows a live meter, and decides by
   itself: sound within the last 3 s = ok, 12 s of silence = it switches to the
   other input once and reports which one works.

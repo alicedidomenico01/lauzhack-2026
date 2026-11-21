@@ -4,7 +4,10 @@
   "version": "0.2.0",
   "description": "Checks that your microphone actually picks up sound, before you join a meeting.",
   "permissions": ["sidePanel"],
-  "host_permissions": ["https://www.gstatic.com/*"],
+  "host_permissions": [
+    "https://www.gstatic.com/*",
+    "https://speed.cloudflare.com/*"
+  ],
   "action": {
     "default_title": "Open Setup Check"
   },

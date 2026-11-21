@@ -1,12 +1,19 @@
-// Network: one tiny probe every 500 ms, rendered as a single ring.
-// The ring shows the browser's own throughput estimate; latency and jitter are
-// ours, and live behind "Details".
+// Network: latency probes every 500 ms, real throughput every 12 s.
+// The ring shows measured download speed, not an estimate.
 
 import { createRing } from "../ui/ring.js";
 
 const PROBE_URL = "https://www.gstatic.com/generate_204";
-const INTERVAL_MS = 500;
+const SPEED_URL = "https://speed.cloudflare.com/__down";
+const SPEED_BYTES = 500000;
+const PROBE_MS = 500;
+const SPEED_MS = 12000;
 const WINDOW = 20;
+
+// 2 Mb/s fills the ring. Below WARN the connection is red and we offer a switch.
+const SPEED_MAX = 2;
+const SPEED_OK = 1.5;
+const SPEED_WARN = 0.6;
 
 const COLORS = { ok: "#35c88a", warn: "#e8b23c", bad: "#ef5f5f" };
 
@@ -23,43 +30,89 @@ function jitter(xs) {
   return sum / (xs.length - 1);
 }
 
+function formatSpeed(mbps) {
+  if (mbps >= 1) return { value: mbps.toFixed(1), unit: "Mb/s" };
+  return { value: String(Math.round(mbps * 1000)), unit: "kb/s" };
+}
+
+function connectionName() {
+  const c = navigator.connection || {};
+  const parts = [];
+  if (c.type) parts.push(c.type.charAt(0).toUpperCase() + c.type.slice(1));
+  if (c.effectiveType) {
+    parts.push(
+      c.effectiveType === "slow-2g" ? "2G slow" : c.effectiveType.toUpperCase()
+    );
+  }
+  return parts.join(" · ") || "unknown";
+}
+
 export function mountNetwork(root, { setStatus }) {
   root.innerHTML = `
+    <div class="ring-top">
+      <div class="ring-holder"></div>
+      <button class="ring-demo" type="button" title="Simulate a shaky connection (demo)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 12h4l2.5-7 3.5 14 2.5-7H22" />
+        </svg>
+      </button>
+      <span class="ring-badge" hidden></span>
+    </div>
+
     <p class="verdict" data-verdict>Measuring…</p>
+    <p class="conn-name" data-conn>—</p>
+
+    <button class="switch-btn" data-switch hidden>Switch Network</button>
+    <p class="switch-help" data-switch-help hidden>
+      Chrome cannot change your Wi-Fi. Open the Wi-Fi menu, pick the other
+      network, and come back — the difference appears next to the ring.
+    </p>
+
     <details class="more">
-      <summary>Details</summary>
+      <summary>
+        <span class="sum-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6" /></svg>
+        </span>
+        <span>Details</span>
+      </summary>
       <dl class="metrics">
         <div><dt>Latency</dt><dd data-rtt>—</dd></div>
         <div><dt>Jitter</dt><dd data-jitter>—</dd></div>
         <div><dt>Failures</dt><dd data-loss>—</dd></div>
         <div><dt>Connection</dt><dd data-type>—</dd></div>
       </dl>
-      <p class="hint" data-note></p>
     </details>
   `;
 
   const ring = createRing();
-  root.prepend(ring.el);
+  root.querySelector(".ring-holder").appendChild(ring.el);
 
   const ui = {
     verdict: root.querySelector("[data-verdict]"),
+    conn: root.querySelector("[data-conn]"),
+    switchBtn: root.querySelector("[data-switch]"),
+    switchHelp: root.querySelector("[data-switch-help]"),
+    badge: root.querySelector(".ring-badge"),
+    demo: root.querySelector(".ring-demo"),
     rtt: root.querySelector("[data-rtt]"),
     jitter: root.querySelector("[data-jitter]"),
     loss: root.querySelector("[data-loss]"),
     type: root.querySelector("[data-type]"),
-    note: root.querySelector("[data-note]"),
   };
 
-  const samples = [];
+  let samples = [];
   let attempts = 0;
   let fails = 0;
-  let timer = 0;
-  let busy = false;
-  let lastType = null;
+  let speed = null;
+  let baseline = null;
+  let demo = false;
+  let probeTimer = 0;
+  let speedTimer = 0;
+  let probing = false;
 
-  async function tick() {
-    if (busy) return;
-    busy = true;
+  async function probe() {
+    if (probing) return;
+    probing = true;
     attempts++;
 
     const t0 = performance.now();
@@ -68,83 +121,138 @@ export function mountNetwork(root, { setStatus }) {
         mode: "no-cors",
         cache: "no-store",
       });
+      // In demo mode we hold the request open so latency and jitter look real.
+      if (demo) await new Promise((r) => setTimeout(r, 280 + Math.random() * 200));
       samples.push(performance.now() - t0);
       if (samples.length > WINDOW) samples.shift();
     } catch {
       fails++;
     }
 
-    busy = false;
+    probing = false;
     render();
   }
 
+  async function measureSpeed() {
+    if (demo) {
+      speed = 0.28 + Math.random() * 0.2;
+      render();
+      return;
+    }
+    try {
+      const t0 = performance.now();
+      const res = await fetch(
+        `${SPEED_URL}?bytes=${SPEED_BYTES}&n=${Math.random()}`,
+        { cache: "no-store" }
+      );
+      const buf = await res.arrayBuffer();
+      const secs = (performance.now() - t0) / 1000;
+      if (secs > 0 && buf.byteLength > 0) {
+        speed = (buf.byteLength * 8) / secs / 1e6;
+        render();
+      }
+    } catch {
+      /* keep the last value rather than showing a wrong one */
+    }
+  }
+
   function render() {
-    const conn = navigator.connection || {};
-
-    // The browser's own estimate, in Mb/s. It caps at 10, hence "10+".
-    const downlink = typeof conn.downlink === "number" ? conn.downlink : null;
-    const downlinkText =
-      downlink === null ? "—" : downlink >= 10 ? "10+" : String(downlink);
-
     const rtt = samples.length ? median(samples) : null;
     const jit = jitter(samples);
 
     ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
     ui.jitter.textContent = `${jit.toFixed(0)} ms`;
     ui.loss.textContent = `${fails}/${attempts}`;
-    ui.type.textContent = conn.effectiveType || conn.type || "unknown";
+    ui.type.textContent = connectionName();
+    ui.conn.textContent = connectionName();
 
-    if (rtt === null) {
-      ring.set(0, downlinkText, "Mb/s", COLORS.bad);
-      ui.verdict.className = "verdict bad";
-      ui.verdict.textContent = "No reply yet: offline or the probe is blocked.";
-      setStatus("network", "bad", "offline");
+    if (speed === null) {
+      ring.set(0, "—", "Mb/s", COLORS.bad);
+      ui.verdict.className = "verdict";
+      ui.verdict.textContent = "Measuring download speed…";
+      setStatus("network", "busy", "measuring");
       return;
     }
 
-    const score = Math.max(
-      0,
-      Math.min(
-        100,
-        Math.round(
-          100 - Math.max(0, rtt - 60) * 0.25 - jit * 0.35 - fails * 20
-        )
-      )
-    );
+    const { value, unit } = formatSpeed(speed);
+    const fill = Math.min(100, (speed / SPEED_MAX) * 100);
+    const level = speed >= SPEED_OK ? "ok" : speed >= SPEED_WARN ? "warn" : "bad";
 
-    const level = score >= 70 ? "ok" : score >= 40 ? "warn" : "bad";
-    const text =
+    ring.set(fill, value, unit, COLORS[level]);
+
+    ui.verdict.className = `verdict ${level}`;
+    ui.verdict.textContent =
       level === "ok"
         ? "Stable. Fine for a call."
         : level === "warn"
-          ? "Usable but shaky. Audio will glitch."
-          : "Unreliable. Expect dropouts.";
+          ? "Slow. Your video will drop frames."
+          : "Poor. Calls will break up.";
 
-    ring.set(score, downlinkText, "Mb/s", COLORS[level]);
-    ui.verdict.className = `verdict ${level}`;
-    ui.verdict.textContent = text;
     setStatus("network", level, level === "ok" ? "ok" : "attention");
 
-    // Detect a network switch (e.g. moving to a hotspot) and say so.
-    const type = conn.type || conn.effectiveType || null;
-    if (type && lastType && type !== lastType) {
-      ui.note.textContent = `Network changed: ${lastType} → ${type}. Compare the numbers you saw before.`;
-    } else if (!ui.note.textContent) {
-      ui.note.textContent =
-        "A browser cannot see other networks around you. Switching to your hotspot and watching this change is the only comparison available without a local helper.";
+    ui.switchBtn.hidden = level !== "bad";
+
+    // Live comparison against the speed we had when the user was told to switch.
+    if (baseline !== null && baseline > 0) {
+      const delta = ((speed - baseline) / baseline) * 100;
+      if (Math.abs(delta) >= 5) {
+        ui.badge.hidden = false;
+        ui.badge.textContent = `${delta > 0 ? "+" : ""}${delta.toFixed(0)}% speed`;
+        ui.badge.className = `ring-badge ${delta > 0 ? "up" : "down"}`;
+      }
     }
-    lastType = type || lastType;
   }
+
+  ui.demo.addEventListener("click", () => {
+    demo = !demo;
+    ui.demo.classList.toggle("on", demo);
+    ui.demo.title = demo
+      ? "Demo mode: simulated bad connection. Click to stop."
+      : "Simulate a shaky connection (demo)";
+    // Drop history so the change is visible immediately.
+    samples = [];
+    attempts = 0;
+    fails = 0;
+    speed = null;
+    render();
+    measureSpeed();
+    probe();
+  });
+
+  ui.switchBtn.addEventListener("click", () => {
+    baseline = speed;
+    ui.switchHelp.hidden = false;
+    ui.switchBtn.hidden = true;
+  });
 
   return {
     start() {
-      if (timer) return;
-      tick();
-      timer = setInterval(tick, INTERVAL_MS);
+      if (probeTimer) return;
+
+      // Fresh state every time the panel comes back.
+      samples = [];
+      attempts = 0;
+      fails = 0;
+      speed = null;
+      baseline = null;
+      demo = false;
+      ui.demo.classList.remove("on");
+      ui.badge.hidden = true;
+      ui.switchHelp.hidden = true;
+      ui.switchBtn.hidden = true;
+
+      probe();
+      probeTimer = setInterval(probe, PROBE_MS);
+
+      // Two measurements: the first pays the TLS handshake.
+      measureSpeed().then(measureSpeed);
+      speedTimer = setInterval(measureSpeed, SPEED_MS);
     },
     stop() {
-      clearInterval(timer);
-      timer = 0;
+      clearInterval(probeTimer);
+      clearInterval(speedTimer);
+      probeTimer = 0;
+      speedTimer = 0;
     },
   };
 }

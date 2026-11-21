@@ -1,4 +1,4 @@
-// Accordion behaviour + the status pill in each row header.
+// Accordion behaviour + the status dot in each row header.
 
 export function initAccordion(onToggle) {
   document.querySelectorAll(".row-head").forEach((head) => {
@@ -12,10 +12,10 @@ export function initAccordion(onToggle) {
 }
 
 export function setStatus(key, level, text) {
-  const pill = document.querySelector(`.row[data-key="${key}"] [data-status]`);
-  if (!pill) return;
-  pill.className = `row-status${level ? ` ${level}` : ""}`;
-  pill.textContent = text;
+  const dot = document.querySelector(`.row[data-key="${key}"] [data-status]`);
+  if (!dot) return;
+  dot.className = `row-dot${level ? ` ${level}` : ""}`;
+  dot.title = text || "";
 }
 
 export function mountOf(key) {
