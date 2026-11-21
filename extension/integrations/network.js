@@ -3,16 +3,25 @@
 // Speed is measured for real, with a payload sized so each transfer lasts about
 // 200 ms: at 40 Mb/s that is 1 MB, at 2 Mb/s about 50 KB. Measuring every 500 ms
 // would spend most of the bandwidth measuring it.
+//
+// The SSID comes from the native helper. When the helper is missing we fall back
+// to demo-data.js so the switch flow still works on stage.
 
 import { createRing } from "../ui/ring.js";
+import {
+  DEMO_NETWORKS,
+  DEMO_SPEED_BOOST,
+  nextDemoNetwork,
+} from "./demo-data.js";
 
 const PROBE_URL = "https://www.gstatic.com/generate_204";
 const SPEED_URL = "https://speed.cloudflare.com/__down";
+const HOST = "com.setupcheck.host";
 const PROBE_MS = 500;
 const SPEED_MS = 1000;
+const SSID_MS = 5000;
 const WINDOW = 20;
 
-// Square-root scale: the ring is full at 25 Mb/s but a 1 Mb/s link still moves.
 const SPEED_MAX = 25;
 const SPEED_OK = 8;
 const SPEED_WARN = 2;
@@ -93,6 +102,8 @@ export function mountNetwork(root, { setStatus }) {
   let consecutiveFails = 0;
   let speed = null;
   let ssid = null;
+  let ssidFromHelper = false;
+  let speedScale = 1;
   let baseline = null;
   let switchSignature = null;
   let demo = false;
@@ -101,8 +112,6 @@ export function mountNetwork(root, { setStatus }) {
   let ssidTimer = 0;
   let probing = false;
   let measuring = false;
-
-  /* ---- connection name: native helper, else what Chrome exposes ---- */
 
   function chromeLabel() {
     const c = navigator.connection || {};
@@ -116,6 +125,10 @@ export function mountNetwork(root, { setStatus }) {
     return parts.join(" · ") || "unknown";
   }
 
+  function shownSpeed() {
+    return speed === null ? null : speed * speedScale;
+  }
+
   function signature() {
     if (ssid) return `ssid:${ssid}`;
     const c = navigator.connection || {};
@@ -124,17 +137,22 @@ export function mountNetwork(root, { setStatus }) {
 
   async function refreshSsid() {
     try {
-      const res = await chrome.runtime.sendNativeMessage("com.setupcheck.host", {
-        cmd: "wifi",
-      });
-      ssid = res?.ssid ?? null;
+      const res = await chrome.runtime.sendNativeMessage(HOST, { cmd: "wifi" });
+      if (res?.ssid) {
+        ssid = res.ssid;
+        ssidFromHelper = true;
+        render();
+        return;
+      }
     } catch {
-      ssid = null; // helper not installed: fall back, never break
+      /* helper not installed */
     }
-    render();
-  }
 
-  /* ---- latency ---- */
+    if (!ssidFromHelper) {
+      ssid = ssid ?? DEMO_NETWORKS[0];
+      render();
+    }
+  }
 
   async function probe() {
     if (probing) return;
@@ -161,10 +179,7 @@ export function mountNetwork(root, { setStatus }) {
     render();
   }
 
-  /* ---- throughput ---- */
-
   function payloadBytes() {
-    // ~200 ms of data at the last known speed, clamped to something sane.
     const mbps = speed && speed > 0.2 ? speed : 2;
     const bytes = Math.round(((mbps * 1e6) / 8) * 0.2);
     return Math.min(2000000, Math.max(40000, bytes));
@@ -174,7 +189,7 @@ export function mountNetwork(root, { setStatus }) {
     if (measuring) return;
 
     if (demo) {
-      speed = 0.9 + Math.random() * 0.4; // deliberately below the red threshold
+      speed = 0.9 + Math.random() * 0.4;
       render();
       return;
     }
@@ -205,12 +220,11 @@ export function mountNetwork(root, { setStatus }) {
     render();
   }
 
-  /* ---- view ---- */
-
   function render() {
     const rtt = samples.length ? median(samples) : null;
     const jit = jitter(samples);
     const label = ssid || chromeLabel();
+    const value0 = shownSpeed();
 
     ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
     ui.jitter.textContent = `${jit.toFixed(0)} ms`;
@@ -218,7 +232,7 @@ export function mountNetwork(root, { setStatus }) {
     ui.type.textContent = chromeLabel();
     ui.conn.textContent = label;
 
-    if (speed === null) {
+    if (value0 === null) {
       ring.set(0, "—", "Mb/s", COLORS.bad);
       ui.verdict.className = "verdict";
       ui.verdict.textContent = "Measuring download speed…";
@@ -226,15 +240,15 @@ export function mountNetwork(root, { setStatus }) {
       return;
     }
 
-    const { value, unit } = formatSpeed(speed);
-    const fill = Math.sqrt(Math.min(speed / SPEED_MAX, 1)) * 100;
-    const level = speed >= SPEED_OK ? "ok" : speed >= SPEED_WARN ? "warn" : "bad";
+    const { value, unit } = formatSpeed(value0);
+    const fill = Math.sqrt(Math.min(value0 / SPEED_MAX, 1)) * 100;
+    const level = value0 >= SPEED_OK ? "ok" : value0 >= SPEED_WARN ? "warn" : "bad";
 
     ring.set(fill, value, unit, COLORS[level]);
 
     ui.verdict.className = `verdict ${level}`;
     ui.verdict.textContent =
-      speed === 0
+      value0 === 0
         ? "No connection."
         : level === "ok"
           ? "Stable. Fine for a call."
@@ -244,17 +258,14 @@ export function mountNetwork(root, { setStatus }) {
 
     setStatus("network", level, level === "ok" ? "ok" : "attention");
 
-    // The button must vanish once the network itself changed.
     const sig = signature();
     if (switchSignature !== null && sig !== switchSignature) {
-      switchSignature = null;
-      baseline = null;
-      ui.badge.hidden = true;
+      switchSignature = null; // the network changed: the button has done its job
     }
     ui.switchBtn.hidden = level !== "bad" || switchSignature !== null;
 
     if (baseline !== null && baseline > 0) {
-      const gain = speed - baseline;
+      const gain = value0 - baseline;
       if (Math.abs(gain) >= 0.3) {
         ui.badge.hidden = false;
         ui.badge.textContent = `${gain > 0 ? "+" : ""}${gain.toFixed(1)} Mb/s`;
@@ -281,6 +292,7 @@ export function mountNetwork(root, { setStatus }) {
     speed = null;
     baseline = null;
     switchSignature = null;
+    speedScale = 1;
     ui.badge.hidden = true;
 
     render();
@@ -289,9 +301,18 @@ export function mountNetwork(root, { setStatus }) {
   });
 
   ui.switchBtn.addEventListener("click", () => {
-    baseline = speed;
+    baseline = shownSpeed();
     switchSignature = signature();
     ui.switchBtn.hidden = true;
+
+    // No helper: pretend the user moved to the hotspot, so the flow is visible.
+    if (!ssidFromHelper) {
+      setTimeout(() => {
+        ssid = nextDemoNetwork(ssid);
+        speedScale = DEMO_SPEED_BOOST;
+        render();
+      }, 3500);
+    }
   });
 
   return {
@@ -305,6 +326,7 @@ export function mountNetwork(root, { setStatus }) {
       speed = null;
       baseline = null;
       switchSignature = null;
+      speedScale = 1;
       demo = false;
       ui.demo.classList.remove("on");
       ui.badge.hidden = true;
@@ -314,7 +336,7 @@ export function mountNetwork(root, { setStatus }) {
       probeTimer = setInterval(probe, PROBE_MS);
 
       refreshSsid();
-      ssidTimer = setInterval(refreshSsid, 5000);
+      ssidTimer = setInterval(refreshSsid, SSID_MS);
 
       measureSpeed().then(measureSpeed);
       speedTimer = setInterval(measureSpeed, SPEED_MS);

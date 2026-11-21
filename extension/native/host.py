@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Setup Check local helper: native messaging host.
 
-The browser cannot read the Wi-Fi SSID. This tiny process can, and answers one
-JSON message at a time over stdin/stdout using the native messaging framing
-(4-byte little-endian length prefix, then UTF-8 JSON).
+The browser cannot read the Wi-Fi SSID, the CPU load or the memory pressure.
+This tiny process can, and answers one JSON message at a time over stdin/stdout
+using the native messaging framing (4-byte little-endian length, then UTF-8 JSON).
 
-Request:  {"cmd": "wifi"}
-Response: {"ssid": "freewifi-epfl", "interface": "en0", "source": "networksetup"}
-          or {"ssid": null, "reason": "..."}
+  {"cmd": "wifi"}   -> {"ssid": "freewifi-epfl", "interface": "en0", ...}
+  {"cmd": "stats"}  -> {"cpu_percent": 37.4, "memory_free_percent": 42,
+                        "top": "Google Chrome", "top_cpu": 18.2, "cores": 10}
 """
 
 import json
@@ -35,7 +35,7 @@ def write_message(obj):
     sys.stdout.buffer.flush()
 
 
-def run(cmd, timeout=4):
+def run(cmd, timeout=6):
     try:
         return subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout
@@ -43,6 +43,8 @@ def run(cmd, timeout=4):
     except Exception:
         return ""
 
+
+# ---------------------------------------------------------------- Wi-Fi
 
 def wifi_interfaces():
     out = run(["networksetup", "-listallhardwareports"])
@@ -73,7 +75,7 @@ def via_networksetup():
 
 
 def via_system_profiler():
-    out = run(["system_profiler", "SPAirPortDataType", "-json"], timeout=10)
+    out = run(["system_profiler", "SPAirPortDataType", "-json"], timeout=12)
     if not out:
         return None
     try:
@@ -104,16 +106,80 @@ def wifi():
             found = None
         if found and found.get("ssid"):
             return found
+    return {"ssid": None, "reason": "no Wi-Fi SSID available on this machine"}
 
-    return {
-        "ssid": None,
-        "reason": (
-            "No Wi-Fi SSID available. Either this machine is on Ethernet, or "
-            "macOS withheld it: System Settings -> Privacy & Security -> "
-            "Location Services must allow the app that launches this helper."
-        ),
-    }
 
+# ---------------------------------------------------------------- CPU / memory
+
+def total_cpu_percent():
+    """Sum of per-process CPU. On macOS 100% == one full core."""
+    out = run(["ps", "-A", "-o", "%cpu="])
+    total = 0.0
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            total += float(line)
+        except ValueError:
+            continue
+    return round(total, 1)
+
+
+def top_process():
+    out = run(["ps", "-A", "-o", "%cpu=,comm=", "-r"])
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            cpu = float(parts[0])
+        except ValueError:
+            continue
+        name = parts[1].rsplit("/", 1)[-1]
+        return {"top": name[:40], "top_cpu": round(cpu, 1)}
+    return {"top": None, "top_cpu": None}
+
+
+def memory_free_percent():
+    """Free + inactive pages as a share of physical memory."""
+    total_out = run(["sysctl", "-n", "hw.memsize"]).strip()
+    vm_out = run(["vm_stat"])
+    if not total_out or not vm_out:
+        return None
+
+    try:
+        total_bytes = int(total_out)
+    except ValueError:
+        return None
+
+    page_size = 4096
+    match = re.search(r"page size of (\d+) bytes", vm_out)
+    if match:
+        page_size = int(match.group(1))
+
+    def pages(label):
+        found = re.search(rf"{label}:\s+(\d+)\.", vm_out)
+        return int(found.group(1)) if found else 0
+
+    free = (pages("Pages free") + pages("Pages inactive")) * page_size
+    if total_bytes <= 0:
+        return None
+    return round(100 * free / total_bytes, 0)
+
+
+def stats():
+    payload = {"cpu_percent": total_cpu_percent()}
+    payload.update(top_process())
+    payload["memory_free_percent"] = memory_free_percent()
+    payload["cores"] = run(["sysctl", "-n", "hw.ncpu"]).strip() or None
+    return payload
+
+
+# ---------------------------------------------------------------- main
 
 def main():
     message = read_message()
@@ -123,6 +189,8 @@ def main():
     cmd = message.get("cmd")
     if cmd == "wifi":
         write_message(wifi())
+    elif cmd == "stats":
+        write_message(stats())
     else:
         write_message({"error": f"unknown cmd: {cmd}"})
 

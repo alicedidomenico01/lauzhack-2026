@@ -57,9 +57,11 @@ new file and one line in `app.js`.
 - **Camera** starts on its own **only if camera permission already exists**;
   otherwise it starts when you first open the section (first use always needs a
   prompt). Live preview, verdict recomputed every 700 ms.
-- **Memory** reports device RAM, cores, event-loop lag and the lag trend. If lag
-  is high or climbing, a **"Fixing remotely…"** banner appears with a 3 s
-  countdown and a Cancel button — the announce-then-act pattern, simulated.
+- **Memory** shows **real CPU load, free memory and the top CPU process** from
+  the native helper, plus event-loop lag. Without the helper it falls back to
+  lag only and leaves the fields empty rather than inventing numbers. When load
+  is bad, a **"Fixing remotely…"** banner names the actual top process, with a
+  3 s countdown and Cancel.
 - Everything stops when the panel is hidden, so the mic and camera LEDs are
   honest.
 
@@ -108,7 +110,7 @@ back to the connection type, so nothing breaks.
 | Network | RTT, jitter, failures, `navigator.connection` | **Other networks around you.** No browser API enumerates Wi-Fi or binds a request to another interface — a worker thread does not help, it is a permission boundary, not a concurrency one |
 | Microphone | `getUserMedia` + AudioContext RMS | Change the device Meet uses |
 | Camera | one frame every 700 ms → luminance, centre/edge ratio | Change your lighting |
-| Memory | `deviceMemory`, cores, event-loop lag | Read system memory |
+| Memory | CPU %, free memory, top process (native helper); lag as fallback | Nothing without the helper |
 
 The honest fix for the two "cannot" rows is a **native messaging host** — a
 small local binary that runs `networkQuality -c` (built into macOS), CoreWLAN

@@ -1,13 +1,20 @@
-// Machine: device class, event-loop lag, and a rising-trend alert.
-//
-// A browser cannot read CPU or system memory. Lag is what we can honestly
-// measure, and it is the thing the user actually feels.
+// Machine: real CPU and memory from the native helper, with event-loop lag as a
+// fallback when the helper is not installed.
 
 import { showAction } from "../ui/action-banner.js";
 
-const WINDOW_MS = 600;
+const HOST = "com.setupcheck.host";
 const INTERVAL_MS = 2000;
-const HISTORY = 8;
+const WINDOW_MS = 600;
+const HISTORY = 6;
+
+async function nativeStats() {
+  try {
+    return await chrome.runtime.sendNativeMessage(HOST, { cmd: "stats" });
+  } catch {
+    return null;
+  }
+}
 
 async function measureLag(ms) {
   const drifts = [];
@@ -27,35 +34,33 @@ async function measureLag(ms) {
 export function mountMemory(root, { setStatus }) {
   root.innerHTML = `
     <div class="metrics">
-      <div><dt>Device RAM</dt><dd data-ram>—</dd></div>
-      <div><dt>Cores</dt><dd data-cores>—</dd></div>
+      <div><dt>CPU</dt><dd data-cpu>—</dd></div>
+      <div><dt>Memory free</dt><dd data-mem>—</dd></div>
+      <div><dt>Top process</dt><dd data-top>—</dd></div>
       <div><dt>UI lag</dt><dd data-lag>—</dd></div>
-      <div><dt>Trend</dt><dd data-trend>—</dd></div>
     </div>
     <p class="verdict" data-verdict>Measuring…</p>
-    <p class="hint">CPU and system memory are invisible to a browser. Lag is the proxy; a local helper (vm_stat, top) would give the real numbers.</p>
   `;
 
   const ui = {
-    ram: root.querySelector("[data-ram]"),
-    cores: root.querySelector("[data-cores]"),
+    cpu: root.querySelector("[data-cpu]"),
+    mem: root.querySelector("[data-mem]"),
+    top: root.querySelector("[data-top]"),
     lag: root.querySelector("[data-lag]"),
-    trend: root.querySelector("[data-trend]"),
     verdict: root.querySelector("[data-verdict]"),
   };
-
-  ui.ram.textContent = navigator.deviceMemory ? `~${navigator.deviceMemory} GB` : "hidden";
-  ui.cores.textContent = navigator.hardwareConcurrency || "—";
 
   const history = [];
   let timer = 0;
   let running = false;
   let actionShown = false;
+  let topName = null;
 
   async function cycle() {
     if (running) return;
     running = true;
 
+    const stats = await nativeStats();
     const lag = await measureLag(WINDOW_MS);
     running = false;
 
@@ -64,38 +69,62 @@ export function mountMemory(root, { setStatus }) {
 
     const first = history[0];
     const last = history[history.length - 1];
-    const delta = last - first;
+    const rising = history.length >= 4 && last - first > 25 && last > 40;
 
     ui.lag.textContent = `${lag.toFixed(0)} ms/s`;
-    ui.trend.textContent =
-      history.length < 3 ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(0)} ms`;
 
-    const rising = history.length >= 4 && delta > 25 && last > 40;
+    let level;
+    let text;
 
-    if (last > 80) {
-      ui.verdict.className = "verdict bad";
-      ui.verdict.textContent = "Struggling right now: calls freeze, typing lags.";
-      setStatus("memory", "bad", "struggling");
-    } else if (last > 30 || rising) {
-      ui.verdict.className = "verdict warn";
-      ui.verdict.textContent = rising
-        ? "Getting worse: something is climbing in the background."
-        : "Mild stutter. Something is competing for the CPU.";
-      setStatus("memory", "warn", rising ? "rising" : "attention");
+    if (stats && typeof stats.cpu_percent === "number") {
+      const cpu = stats.cpu_percent;
+      const memFree = stats.memory_free_percent;
+      topName = stats.top || null;
+
+      ui.cpu.textContent = `${cpu.toFixed(0)}%`;
+      ui.mem.textContent = memFree === null ? "—" : `${memFree}%`;
+      ui.top.textContent = stats.top
+        ? `${stats.top} ${stats.top_cpu ?? ""}%`.trim()
+        : "—";
+
+      const memLow = typeof memFree === "number" && memFree < 12;
+      level = cpu > 85 || memLow ? "bad" : cpu > 60 || rising ? "warn" : "ok";
+      text =
+        level === "bad"
+          ? memLow
+            ? "Memory is nearly full. Everything will start swapping."
+            : "CPU is saturated. Calls freeze, typing lags."
+          : level === "warn"
+            ? rising
+              ? "Load is climbing in the background."
+              : "Busy, but still usable."
+            : "Nothing is starving the machine.";
     } else {
-      ui.verdict.className = "verdict ok";
-      ui.verdict.textContent = "Responsive. Nothing is starving the machine.";
-      setStatus("memory", "ok", "ok");
+      // No helper: lag is all we have, and we say so by leaving the fields empty.
+      ui.cpu.textContent = "—";
+      ui.mem.textContent = "—";
+      ui.top.textContent = "helper off";
+      level = last > 80 ? "bad" : last > 30 || rising ? "warn" : "ok";
+      text =
+        level === "bad"
+          ? "The browser is blocked. Something is starving the machine."
+          : level === "warn"
+            ? "Mild stutter. Something is competing for the CPU."
+            : "Responsive. Nothing is starving the machine.";
     }
 
-    // The action flow: announce, give 3 s to cancel, then "apply".
-    if ((last > 80 || rising) && !actionShown) {
+    ui.verdict.className = `verdict ${level}`;
+    ui.verdict.textContent = text;
+    setStatus("memory", level, level === "ok" ? "ok" : "attention");
+
+    if (level === "bad" && !actionShown) {
       actionShown = true;
       setStatus("memory", "busy", "acting");
       showAction({
         title: "Fixing remotely…",
-        detail:
-          "Simulated remote action: restart the process starving this machine. Cancel within 3 s.",
+        detail: topName
+          ? `Simulated remote action: restart ${topName}. Cancel within 3 s.`
+          : "Simulated remote action: restart the busiest process. Cancel within 3 s.",
         seconds: 3,
         onApply: () => {
           ui.verdict.className = "verdict ok";
