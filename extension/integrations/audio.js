@@ -43,7 +43,7 @@ export function mountAudio(root, api) {
     <select data-device aria-label="Microphone"></select>
     <div class="meter"><div class="meter-fill" data-fill></div></div>
     <div class="meter-readout">
-      <span data-level>—</span>
+      <span data-level>-</span>
       <span class="state" data-state>idle</span>
     </div>
     <p class="verdict" data-verdict></p>
@@ -56,10 +56,10 @@ export function mountAudio(root, api) {
         <span>Details</span>
       </summary>
       <dl class="metrics">
-        <div><dt>Voice peak</dt><dd data-peak>—</dd></div>
-        <div><dt>Room noise</dt><dd data-floor>—</dd></div>
-        <div><dt>Clipping</dt><dd data-clip>—</dd></div>
-        <div><dt>Input</dt><dd data-input>—</dd></div>
+        <div><dt>Voice peak</dt><dd data-peak>-</dd></div>
+        <div><dt>Room noise</dt><dd data-floor>-</dd></div>
+        <div><dt>Clipping</dt><dd data-clip>-</dd></div>
+        <div><dt>Input</dt><dd data-input>-</dd></div>
       </dl>
     </details>
   `;
@@ -191,7 +191,7 @@ export function mountAudio(root, api) {
     ui.input.textContent = [
       st.sampleRate ? `${(st.sampleRate / 1000).toFixed(0)} kHz` : null,
       st.channelCount ? `${st.channelCount} ch` : null,
-    ].filter(Boolean).join(" · ") || "—";
+    ].filter(Boolean).join(" · ") || "-";
 
     ctx = new AudioContext();
     analyser = ctx.createAnalyser();
@@ -256,8 +256,8 @@ export function mountAudio(root, api) {
     if (quiet.length >= 20) floorReady = true;
     const clips = frames.filter((f) => f.clip).length;
 
-    ui.peak.textContent = voicePeak > -100 ? `${voicePeak.toFixed(0)} dBFS` : "—";
-    ui.floor.textContent = quiet.length ? `${floor.toFixed(0)} dBFS` : "—";
+    ui.peak.textContent = voicePeak > -100 ? `${voicePeak.toFixed(0)} dBFS` : "-";
+    ui.floor.textContent = quiet.length ? `${floor.toFixed(0)} dBFS` : "-";
     ui.clip.textContent = clips ? `${clips} frames` : "none";
 
     const name = nameOf(deviceId);

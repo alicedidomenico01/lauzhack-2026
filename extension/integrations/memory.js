@@ -30,8 +30,8 @@ export function mountMemory(root, api) {
   const { setStatus, remedy } = api;
   root.innerHTML = `
     <dl class="metrics">
-      <div><dt>CPU usage</dt><dd data-cpu>—</dd></div>
-      <div><dt>Available memory</dt><dd data-mem>—</dd></div>
+      <div><dt>CPU usage</dt><dd data-cpu>-</dd></div>
+      <div><dt>Available memory</dt><dd data-mem>-</dd></div>
     </dl>
     <p class="verdict" data-verdict>Measuring…</p>
   `;

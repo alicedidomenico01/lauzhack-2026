@@ -71,12 +71,12 @@ export function mountCamera(root, api) {
         <span>Details</span>
       </summary>
       <dl class="metrics">
-        <div><dt>Resolution</dt><dd data-res>—</dd></div>
-        <div><dt>Frame rate</dt><dd data-fps>—</dd></div>
-        <div><dt>Face</dt><dd data-face>—</dd></div>
-        <div><dt>Face light</dt><dd data-light>—</dd></div>
-        <div><dt>Backlight</dt><dd data-back>—</dd></div>
-        <div><dt>Side light</dt><dd data-side>—</dd></div>
+        <div><dt>Resolution</dt><dd data-res>-</dd></div>
+        <div><dt>Frame rate</dt><dd data-fps>-</dd></div>
+        <div><dt>Face</dt><dd data-face>-</dd></div>
+        <div><dt>Face light</dt><dd data-light>-</dd></div>
+        <div><dt>Backlight</dt><dd data-back>-</dd></div>
+        <div><dt>Side light</dt><dd data-side>-</dd></div>
       </dl>
     </details>
   `;
@@ -414,7 +414,7 @@ export function mountCamera(root, api) {
 
   function renderDetails(r) {
     if (frameSize) ui.res.textContent = `${frameSize.w}×${frameSize.h}`;
-    ui.fps.textContent = r.fps === null ? "—" : `${r.fps.toFixed(0)} fps · gap ${Math.round(r.gap)} ms`;
+    ui.fps.textContent = r.fps === null ? "-" : `${r.fps.toFixed(0)} fps · gap ${Math.round(r.gap)} ms`;
     if (!last) return;
     const { face, detector, faceLum, backStops, sideStops } = last;
     ui.face.textContent =
@@ -425,14 +425,14 @@ export function mountCamera(root, api) {
           : face
             ? `${pct(face.w)} wide, ${pct(face.y + face.h / 2)} down`
             : "not found";
-    ui.light.textContent = face && faceLum !== null ? `${faceLum.toFixed(0)}/255 (lit side)` : "—";
+    ui.light.textContent = face && faceLum !== null ? `${faceLum.toFixed(0)}/255 (lit side)` : "-";
     ui.back.textContent =
       face && backStops !== null
         ? Math.abs(backStops) < 0.5
           ? "even"
           : `${backStops > 0 ? "+" : ""}${backStops.toFixed(1)} stops`
-        : "—";
-    ui.side.textContent = face && sideStops !== null ? `${sideStops.toFixed(1)} stops` : "—";
+        : "-";
+    ui.side.textContent = face && sideStops !== null ? `${sideStops.toFixed(1)} stops` : "-";
   }
 
   // Drawn in camera coordinates; the canvas is mirrored by CSS like the video.

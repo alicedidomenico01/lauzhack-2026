@@ -103,10 +103,22 @@ def connect():
             name TEXT NOT NULL,
             role TEXT,
             department TEXT,
-            office TEXT
+            office TEXT,
+            seq INTEGER
         );
     """)
+    migrate_employees(db)
     return db
+
+
+def migrate_employees(db):
+    columns = {r["name"] for r in db.execute("PRAGMA table_info(employees)")}
+    if "seq" not in columns:
+        db.execute("ALTER TABLE employees ADD COLUMN seq INTEGER")
+    # People are derived data: if an older database holds the old invented names,
+    # drop them and let ensure_employee regenerate the new ones.
+    db.execute("DELETE FROM employees WHERE name NOT LIKE 'Employee %' AND name != 'You'")
+    db.commit()
 
 
 # ---------------------------------------------------------------- employees
@@ -144,19 +156,30 @@ def ensure_employee(db, device_id, department=None):
         return dict(row)
 
     rng = random.Random(device_id)
+    if device_id.startswith("fleet-"):
+        seq = db.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM employees WHERE seq IS NOT NULL"
+        ).fetchone()["n"]
+        name = f"Employee {seq}"
+    else:
+        # Anything reporting live is this laptop, which is the person using it.
+        seq = None
+        name = "You"
+
     employee = {
         "device_id": device_id,
         "employee_id": f"EMP-{zlib.crc32(device_id.encode()) % 9000 + 1000}",
-        "name": f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}",
-        "role": rng.choice(ROLES),
-        "department": department or weighted(rng, DEPARTMENTS),
-        "office": rng.choice(OFFICES),
+        "name": name,
+        "role": None if not seq else rng.choice(ROLES),
+        "department": "Local" if not seq else (department or weighted(rng, DEPARTMENTS)),
+        "office": None if not seq else rng.choice(OFFICES),
+        "seq": seq,
     }
     db.execute(
-        "INSERT OR IGNORE INTO employees(device_id, employee_id, name, role, department, office) "
-        "VALUES(?,?,?,?,?,?)",
+        "INSERT OR IGNORE INTO employees(device_id, employee_id, name, role, department, office, seq) "
+        "VALUES(?,?,?,?,?,?,?)",
         (employee["device_id"], employee["employee_id"], employee["name"],
-         employee["role"], employee["department"], employee["office"]),
+         employee["role"], employee["department"], employee["office"], employee["seq"]),
     )
     return employee
 

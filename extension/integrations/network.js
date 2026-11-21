@@ -46,7 +46,7 @@ export function mountNetwork(root, api) {
       </div>
 
       <p class="verdict" data-verdict>Measuring…</p>
-      <p class="conn-name" data-conn>—</p>
+      <p class="conn-name" data-conn>-</p>
       <p class="net-note" data-note></p>
 
 
@@ -58,10 +58,10 @@ export function mountNetwork(root, api) {
           <span>Details</span>
         </summary>
         <dl class="metrics">
-          <div><dt>Latency</dt><dd data-rtt>—</dd></div>
-          <div><dt>Jitter</dt><dd data-jitter>—</dd></div>
-          <div><dt>Lost probes</dt><dd data-loss>—</dd></div>
-          <div><dt>Chrome quality estimate</dt><dd data-type>—</dd></div>
+          <div><dt>Latency</dt><dd data-rtt>-</dd></div>
+          <div><dt>Jitter</dt><dd data-jitter>-</dd></div>
+          <div><dt>Lost probes</dt><dd data-loss>-</dd></div>
+          <div><dt>Chrome quality estimate</dt><dd data-type>-</dd></div>
         </dl>
       </details>
     </div>
@@ -214,14 +214,14 @@ export function mountNetwork(root, api) {
         : ssid || FALLBACK_SSID;
     const value0 = speed;
 
-    ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
+    ui.rtt.textContent = rtt === null ? "-" : `${rtt.toFixed(0)} ms`;
     ui.jitter.textContent = `${jit.toFixed(0)} ms`;
     ui.loss.textContent = `${fails}/${attempts}`;
     ui.type.textContent = chromeLabel();
     ui.conn.textContent = label;
 
     if (value0 === null) {
-      ring.set(0, "—", "Mb/s", COLORS.bad);
+      ring.set(0, "-", "Mb/s", COLORS.bad);
       const text = speedUnavailable ? "Speed test unavailable. Retrying…" : "Measuring download speed…";
       ui.verdict.className = speedUnavailable ? "verdict warn" : "verdict";
       ui.verdict.textContent = text;
@@ -309,7 +309,7 @@ export function mountNetwork(root, api) {
       suggestion: (p) =>
         `This connection is too slow for a call. Switching to ${
           p.params.targetNetwork || "another network"
-        } would probably fix it — do it from the Wi-Fi menu.`,
+        } would probably fix it. Do it from the Wi-Fi menu.`,
       action: {
         title: "Switch to a better Wi-Fi network",
         detail: (p) =>

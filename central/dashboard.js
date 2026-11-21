@@ -1,5 +1,6 @@
 const state = {
-  tab: "overview",
+  tab: "reports",
+  statsView: "employees",
   days: 14,
   fleet: true,
   stats: null,
@@ -11,6 +12,9 @@ const state = {
   section: "",
   drawer: null,
 };
+
+const TIME_SAVED_NOTE =
+  "Estimated, not measured: every fixed report is credited with the minutes that failure usually costs (15 for a dead or wrong microphone, 12 for a slow network, 10 for a frozen camera, 8 for CPU or memory).";
 
 const $ = (id) => document.getElementById(id);
 
@@ -47,12 +51,28 @@ const STATUS_LABEL = {
 
 const badge = (status) => {
   const level = STATUS_LEVEL[status] || "neutral";
-  return el("span", `badge ${level}`, STATUS_LABEL[status] || status || "—");
+  return el("span", `badge ${level}`, STATUS_LABEL[status] || status || "-");
 };
 
-const pct = (value) => (value === null || value === undefined ? "—" : `${Math.round(value * 100)}%`);
+function sourceBadge(incident) {
+  if (incident.simulated) return el("span", "badge warn", "demo");
+  if (incident.fleet) return el("span", "badge neutral", "seeded");
+  return el("span", "badge ok", "live");
+}
 
-const num = (value) => (value === null || value === undefined ? "—" : new Intl.NumberFormat().format(value));
+function infoIcon(text) {
+  const node = el("span", "info", "i");
+  node.tabIndex = 0;
+  node.setAttribute("role", "note");
+  node.setAttribute("aria-label", text);
+  node.dataset.tip = text;
+  node.title = text;
+  return node;
+}
+
+const pct = (value) => (value === null || value === undefined ? "-" : `${Math.round(value * 100)}%`);
+
+const num = (value) => (value === null || value === undefined ? "-" : new Intl.NumberFormat().format(value));
 
 function ago(seconds) {
   const delta = Date.now() / 1000 - seconds;
@@ -89,15 +109,27 @@ async function load() {
 
 /* ---------------------------------------------------------------- tabs */
 
-document.querySelectorAll(".tabs button").forEach((button) => {
+document.querySelectorAll(".tabs > button").forEach((button) => {
   button.addEventListener("click", () => {
     state.tab = button.dataset.tab;
-    document.querySelectorAll(".tabs button").forEach((b) => {
+    document.querySelectorAll(".tabs > button").forEach((b) => {
       b.setAttribute("aria-selected", String(b === button));
     });
-    document.querySelectorAll(".panel").forEach((panel) => {
+    document.querySelectorAll("main > .panel").forEach((panel) => {
       panel.hidden = panel.id !== `panel-${state.tab}`;
     });
+    render();
+  });
+});
+
+document.querySelectorAll(".sub-tabs > button").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.statsView = button.dataset.view;
+    document.querySelectorAll(".sub-tabs > button").forEach((b) => {
+      b.setAttribute("aria-selected", String(b === button));
+    });
+    $("view-employees").hidden = state.statsView !== "employees";
+    $("view-company").hidden = state.statsView !== "company";
     render();
   });
 });
@@ -106,27 +138,32 @@ document.querySelectorAll(".tabs button").forEach((button) => {
 
 function render() {
   if (!state.stats) return;
-  if (state.tab === "overview") renderOverview();
   if (state.tab === "reports") renderReports();
-  if (state.tab === "people") renderPeople();
+  if (state.tab === "stats") {
+    if (state.statsView === "employees") renderPeople();
+    else renderCompany();
+  }
   if (state.tab === "actions") renderPolicies();
 }
 
-function renderOverview() {
+function renderCompany() {
   const s = state.stats;
   const kpis = $("kpis");
   kpis.replaceChildren();
 
   const cards = [
-    { label: "Reports", value: num(s.total), foot: `${num(s.devices)} devices · ${s.days} days` },
+    { label: "Reports", value: num(s.total), foot: `${num(s.devices)} devices, ${s.days} days` },
     { label: "Fixed remotely", value: pct(s.fix_rate), foot: `${num(s.fixed)} of ${num(s.acted)} acted on`, level: "ok" },
     { label: "Rejected by employees", value: pct(s.reject_rate), foot: `${num(s.rejected)} opt-outs`, level: "bad" },
-    { label: "Time given back", value: `${s.hours_saved} h`, foot: "vs. raising a ticket each time" },
+    { label: "Time saved (est.)", value: `${s.hours_saved} h`, foot: "estimate, see note", info: TIME_SAVED_NOTE },
   ];
 
   for (const card of cards) {
     const box = el("dl", `kpi ${card.level || ""}`);
-    box.append(el("dt", "", card.label), el("dd", "", card.value), el("p", "foot", card.foot));
+    const label = el("dt");
+    label.append(card.label);
+    if (card.info) label.append(" ", infoIcon(card.info));
+    box.append(label, el("dd", "", card.value), el("p", "foot", card.foot));
     kpis.append(box);
   }
 
@@ -137,7 +174,7 @@ function renderOverview() {
   for (const issue of issues) {
     const row = el("div", "bar-row");
     const label = el("span", "bar-label", issue.label || issue.issue);
-    const count = el("span", "bar-count", `${num(issue.count)}`);
+    const count = el("span", "bar-count", num(issue.count));
     const track = el("div", "bar-track");
     const share = issue.count ? issue.fixed / issue.count : 0;
     const fill = el("div", `bar-fill ${share >= 0.7 ? "ok" : share >= 0.4 ? "" : "warn"}`);
@@ -162,37 +199,20 @@ function renderOverview() {
     trend.append(col);
   }
 
-  const recent = $("recent");
-  recent.replaceChildren();
-  const head = el("thead");
-  const headRow = el("tr");
-  ["When", "Employee", "Issue", "Status", "Action"].forEach((h) => headRow.append(el("th", "", h)));
-  head.append(headRow);
-  recent.append(head);
-
-  const body = el("tbody");
-  for (const incident of state.incidents.slice(0, 8)) {
-    const tr = el("tr", "clickable");
-    tr.append(
-      el("td", "", ago(incident.created_at)),
-      el("td", "", incident.employee_name || incident.device_name || "—"),
-      el("td", "", incident.title || incident.issue),
-      el("td", ""),
-      el("td", "", incident.action || "—")
-    );
-    tr.children[3].append(badge(incident.status));
-    if (incident.simulated) tr.children[2].append(" ", el("span", "tag", "simulated"));
-    tr.addEventListener("click", () => openDrawer(incident));
-    body.append(tr);
+  const departments = $("departments");
+  departments.replaceChildren();
+  const depts = s.by_department || [];
+  const deptMax = Math.max(1, ...depts.map((d) => d.count));
+  for (const dept of depts) {
+    const row = el("div", "bar-row");
+    const track = el("div", "bar-track");
+    const fill = el("div", "bar-fill");
+    fill.style.width = `${Math.round((dept.count / deptMax) * 100)}%`;
+    track.append(fill);
+    row.append(el("span", "bar-label", dept.department), el("span", "bar-count", num(dept.count)), track);
+    departments.append(row);
   }
-  recent.append(body);
-  if (!state.incidents.length) {
-    const tr = el("tr");
-    const td = el("td", "empty", "Nothing reported yet.");
-    td.colSpan = 5;
-    tr.append(td);
-    body.append(tr);
-  }
+  if (!depts.length) departments.append(el("p", "empty", "No reports in this window."));
 }
 
 function filteredIncidents() {
@@ -227,7 +247,7 @@ function renderReports() {
   table.replaceChildren();
   const head = el("thead");
   const headRow = el("tr");
-  ["When", "Employee", "Device", "Section", "Issue", "Status", "Action"].forEach((h) =>
+  ["When", "Employee", "Source", "Device", "Section", "Issue", "Status", "Action"].forEach((h) =>
     headRow.append(el("th", "", h))
   );
   head.append(headRow);
@@ -238,18 +258,21 @@ function renderReports() {
   for (const incident of rows) {
     const tr = el("tr", "clickable");
     const employee = el("td", "");
-    employee.append(el("div", "", incident.employee_name || "—"));
+    employee.append(el("div", "", incident.employee_name || "-"));
     employee.append(el("div", "muted small", incident.employee_role || incident.department || ""));
+    const source = el("td", "");
+    source.append(sourceBadge(incident));
     tr.append(
       el("td", "", ago(incident.created_at)),
       employee,
-      el("td", "mono", incident.device_name || incident.device_id || "—"),
-      el("td", "", incident.section || "—"),
+      source,
+      el("td", "mono", incident.device_name || incident.device_id || "-"),
+      el("td", "", incident.section || "-"),
       el("td", "", incident.title || incident.issue),
       el("td", ""),
-      el("td", "", incident.action || "—")
+      el("td", "", incident.action || "-")
     );
-    tr.children[5].append(badge(incident.status));
+    tr.children[6].append(badge(incident.status));
     tr.addEventListener("click", () => openDrawer(incident));
     body.append(tr);
   }
@@ -258,16 +281,16 @@ function renderReports() {
   if (!rows.length) {
     const tr = el("tr");
     const td = el("td", "empty", "No reports match these filters.");
-    td.colSpan = 7;
+    td.colSpan = 8;
     tr.append(td);
     body.append(tr);
   }
 
   const note = $("reports-note");
-  note.textContent = `${num(rows.length)} of ${num(state.incidents.length)} reports shown`;
+  note.textContent = `${num(rows.length)} of ${num(state.incidents.length)} reports shown. Live means it came from a device now; seeded is generated history; demo is a failure triggered on purpose.`;
   const clear = $("clear-employee");
   clear.hidden = !state.employee;
-  clear.textContent = state.employee ? `Filtered by ${state.employee} · clear` : "";
+  clear.textContent = state.employee ? `Filtered by ${state.employee}, clear` : "";
 }
 
 function fillFilters() {
@@ -301,8 +324,12 @@ function renderPeople() {
   table.replaceChildren();
   const head = el("thead");
   const headRow = el("tr");
-  ["Employee", "Role", "Department", "Office", "Reports", "Fixed", "Rejected", "Time lost"]
-    .forEach((h, index) => headRow.append(el("th", index > 3 ? "num" : "", h)));
+  ["Employee", "Role", "Department", "Office", "Reports", "Fixed", "Rejected"].forEach((h, index) =>
+    headRow.append(el("th", index > 3 ? "num" : "", h))
+  );
+  const timeTh = el("th", "num");
+  timeTh.append("Time saved (est.) ", infoIcon(TIME_SAVED_NOTE));
+  headRow.append(timeTh);
   head.append(headRow);
   table.append(head);
 
@@ -315,9 +342,9 @@ function renderPeople() {
     name.append(el("div", "muted small", person.employee_id));
     tr.append(
       name,
-      el("td", "", person.role || "—"),
-      el("td", "", person.department || "—"),
-      el("td", "", person.office || "—"),
+      el("td", "", person.role || "-"),
+      el("td", "", person.department || "-"),
+      el("td", "", person.office || "-"),
       el("td", "num", num(person.incidents)),
       el("td", "num", num(person.fixed)),
       el("td", "num", num(person.rejected)),
@@ -327,7 +354,7 @@ function renderPeople() {
       state.employee = person.employee_id;
       state.search = "";
       $("search").value = "";
-      document.querySelector('.tabs button[data-tab="reports"]').click();
+      document.querySelector('.tabs > button[data-tab="reports"]').click();
     });
     body.append(tr);
   }
@@ -396,7 +423,7 @@ function renderPolicies() {
       params.append(input);
     }
 
-    tr.append(failure, el("td", "", policy.action || "—"), el("td", ""), el("td", ""), el("td", ""), params);
+    tr.append(failure, el("td", "", policy.action || "-"), el("td", ""), el("td", ""), el("td", ""), params);
     tr.children[2].append(mode);
     tr.children[3].append(seconds);
     tr.children[4].append(execution);
@@ -421,15 +448,15 @@ function openDrawer(incident) {
 
   const facts = el("dl");
   const rows = [
-    ["Employee", `${incident.employee_name || "—"}${incident.employee_role ? ` · ${incident.employee_role}` : ""}`],
-    ["Device", incident.device_name || incident.device_id || "—"],
-    ["Department", incident.department || "—"],
+    ["Employee", `${incident.employee_name || "-"}${incident.employee_role ? ` · ${incident.employee_role}` : ""}`],
+    ["Device", incident.device_name || incident.device_id || "-"],
+    ["Department", incident.department || "-"],
     ["When", when(incident.created_at)],
     ["Status", STATUS_LABEL[incident.status] || incident.status],
-    ["Action", incident.action || "—"],
-    ["Execution", incident.execution || "—"],
-    ["Duration", incident.duration_ms ? `${(incident.duration_ms / 1000).toFixed(1)} s` : "—"],
-    ["Source", incident.simulated ? "triggered on purpose" : incident.fleet ? "simulated fleet" : "live device"],
+    ["Action", incident.action || "-"],
+    ["Execution", incident.execution || "-"],
+    ["Duration", incident.duration_ms ? `${(incident.duration_ms / 1000).toFixed(1)} s` : "-"],
+    ["Source", incident.simulated ? "demo, triggered on purpose" : incident.fleet ? "seeded fleet" : "live device"],
   ];
   for (const [key, value] of rows) {
     facts.append(el("dt", "", key), el("dd", "", value));

@@ -1,5 +1,5 @@
 // Remote-action banners: IT says what it wants to do on this device, the
-// employee decides. Nothing is applied on a timer — an alert that vanishes
+// employee decides. Nothing is applied on a timer: an alert that vanishes
 // while you are in a meeting is the same as no alert. Several open at once
 // stack, so it is obvious how many are waiting.
 

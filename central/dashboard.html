@@ -32,52 +32,24 @@
         </label>
         <label class="check">
           <input type="checkbox" id="fleet" checked />
-          <span>Include simulated fleet</span>
+          <span>Include seeded fleet</span>
         </label>
         <button id="refresh" class="btn">Refresh</button>
       </div>
     </header>
 
     <nav class="tabs" role="tablist" aria-label="Sections">
-      <button role="tab" id="tab-overview" aria-selected="true" aria-controls="panel-overview" data-tab="overview">Overview</button>
-      <button role="tab" id="tab-reports" aria-selected="false" aria-controls="panel-reports" data-tab="reports">Reports</button>
-      <button role="tab" id="tab-people" aria-selected="false" aria-controls="panel-people" data-tab="people">People</button>
+      <button role="tab" id="tab-reports" aria-selected="true" aria-controls="panel-reports" data-tab="reports">Reports</button>
+      <button role="tab" id="tab-stats" aria-selected="false" aria-controls="panel-stats" data-tab="stats">Stats</button>
       <button role="tab" id="tab-actions" aria-selected="false" aria-controls="panel-actions" data-tab="actions">Actions</button>
     </nav>
 
     <main>
-      <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
-        <div class="kpis" id="kpis"></div>
-        <div class="split">
-          <section class="card">
-            <header class="card-head">
-              <h2>What breaks most</h2>
-              <p class="muted">Bar length is the share fixed remotely.</p>
-            </header>
-            <div id="breaks" class="bars"></div>
-          </section>
-          <section class="card">
-            <header class="card-head">
-              <h2>Volume</h2>
-              <p class="muted">Reports per day in the selected window.</p>
-            </header>
-            <div id="trend" class="trend"></div>
-          </section>
-        </div>
-        <section class="card">
-          <header class="card-head">
-            <h2>Latest reports</h2>
-            <p class="muted">Click a row to open it.</p>
-          </header>
-          <div class="table-wrap"><table id="recent" class="table"></table></div>
-        </section>
-      </section>
-
-      <section class="panel" id="panel-reports" role="tabpanel" aria-labelledby="tab-reports" hidden>
+      <section class="panel" id="panel-reports" role="tabpanel" aria-labelledby="tab-reports">
         <div class="filters">
           <label class="field grow">
             <span>Search</span>
-            <input id="search" type="search" placeholder="employee, device, issue…" />
+            <input id="search" type="search" placeholder="employee, device, issue" />
           </label>
           <label class="field">
             <span>Status</span>
@@ -95,14 +67,48 @@
         </section>
       </section>
 
-      <section class="panel" id="panel-people" role="tabpanel" aria-labelledby="tab-people" hidden>
-        <section class="card flush">
-          <header class="card-head padded">
-            <h2>People</h2>
-            <p class="muted">Every report is attached to a person. Click one to see their reports.</p>
-          </header>
-          <div class="table-wrap tall"><table id="people" class="table"></table></div>
-        </section>
+      <section class="panel" id="panel-stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
+        <div class="sub-tabs" role="tablist" aria-label="Stats scope">
+          <button role="tab" id="stats-employees-tab" aria-selected="true" data-view="employees">Employees</button>
+          <button role="tab" id="stats-company-tab" aria-selected="false" data-view="company">Company</button>
+        </div>
+
+        <div id="view-employees">
+          <section class="card flush">
+            <header class="card-head padded">
+              <h2>Employees</h2>
+              <p class="muted">Every report is attached to a person. Click one to see their reports.</p>
+            </header>
+            <div class="table-wrap tall"><table id="people" class="table"></table></div>
+          </section>
+        </div>
+
+        <div id="view-company" hidden>
+          <div class="kpis" id="kpis"></div>
+          <div class="split">
+            <section class="card">
+              <header class="card-head">
+                <h2>What breaks most</h2>
+                <p class="muted">Bar length is the share fixed remotely.</p>
+              </header>
+              <div id="breaks" class="bars"></div>
+            </section>
+            <section class="card">
+              <header class="card-head">
+                <h2>Volume</h2>
+                <p class="muted">Reports per day in the selected window.</p>
+              </header>
+              <div id="trend" class="trend"></div>
+            </section>
+          </div>
+          <section class="card">
+            <header class="card-head">
+              <h2>By department</h2>
+              <p class="muted">Reports in the selected window.</p>
+            </header>
+            <div id="departments" class="bars"></div>
+          </section>
+        </div>
       </section>
 
       <section class="panel" id="panel-actions" role="tabpanel" aria-labelledby="tab-actions" hidden>

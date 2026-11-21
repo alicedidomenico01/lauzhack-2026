@@ -12,7 +12,7 @@ export function createRing() {
       <circle class="fg" cx="40" cy="40" r="34"></circle>
     </svg>
     <div class="ring-figure">
-      <span class="ring-value">—</span>
+      <span class="ring-value">-</span>
       <span class="ring-label">Mb/s</span>
     </div>
   `;
