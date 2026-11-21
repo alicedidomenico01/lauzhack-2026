@@ -49,7 +49,6 @@ export function mountNetwork(root, api) {
       <p class="conn-name" data-conn>—</p>
       <p class="net-note" data-note></p>
 
-      <button class="switch-btn" data-switch hidden>Switch network now</button>
 
       <details class="more">
         <summary>
@@ -74,7 +73,6 @@ export function mountNetwork(root, api) {
   const ui = {
     verdict: root.querySelector("[data-verdict]"),
     conn: root.querySelector("[data-conn]"),
-    switchBtn: root.querySelector("[data-switch]"),
     note: root.querySelector("[data-note]"),
     rtt: root.querySelector("[data-rtt]"),
     jitter: root.querySelector("[data-jitter]"),
@@ -249,8 +247,6 @@ export function mountNetwork(root, api) {
 
     setStatus(level, level === "ok" ? "ok" : "attention");
 
-    ui.switchBtn.hidden = level !== "bad";
-
     // After a switch, show what it bought: the speed before and now.
     if (recentSwitch && switched.before !== null && !measuringAfterSwitch()) {
       const d = value0 - switched.before;
@@ -274,7 +270,6 @@ export function mountNetwork(root, api) {
     speed = null;
     speedUnavailable = false;
     speedEpoch++;
-    ui.switchBtn.hidden = true;
   }
 
   function setDemo(on) {
@@ -308,8 +303,13 @@ export function mountNetwork(root, api) {
       key: "slow",
       severity: "bad",
       simulated: demo,
+      suggestOnly: true,
       diagnostics,
       title: !speed ? "No connection" : `Very slow connection (${shown.value} ${shown.unit})`,
+      suggestion: (p) =>
+        `This connection is too slow for a call. Switching to ${
+          p.params.targetNetwork || "another network"
+        } would probably fix it — do it from the Wi-Fi menu.`,
       action: {
         title: "Switch to a better Wi-Fi network",
         detail: (p) =>
@@ -339,11 +339,6 @@ export function mountNetwork(root, api) {
     };
   }
 
-  // The employee asks for the switch: same action as the remote one, no countdown.
-  ui.switchBtn.addEventListener("click", () => {
-    if (speed !== null) remedy.raise(issue(), { userInitiated: true });
-  });
-
   return {
     setDamage: setDemo,
     start() {
@@ -357,7 +352,6 @@ export function mountNetwork(root, api) {
       speedUnavailable = false;
       speedEpoch++;
       ssid = null;
-      ui.switchBtn.hidden = true;
 
       probe();
       probeTimer = setInterval(probe, PROBE_MS);

@@ -75,7 +75,10 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
 
     const [dev, policy, diagnostics] = await Promise.all([device(), policyFor(issueId), safe(issue.diagnostics)]);
     const action = issue.action;
-    const willAct = !!action && (userInitiated || policy.mode !== "off");
+    // A suggestion has nothing to apply: it is shown, reported, and closed when
+    // the problem goes away.
+    const suggestOnly = !!issue.suggestOnly && !userInitiated;
+    const willAct = !suggestOnly && !!action && (userInitiated || policy.mode !== "off");
 
     send("POST", "/api/incidents", {
       at: inc.startedAt / 1000,
@@ -89,7 +92,11 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
       simulated: !!issue.simulated,
       status: willAct ? "proposed" : "reported",
       action: action ? action.title : null,
-      note: willAct ? `${userInitiated ? "requested by the employee" : policy.mode} · ${policy.execution}` : "report only",
+      note: suggestOnly
+        ? "suggestion only"
+        : willAct
+          ? `${userInitiated ? "requested by the employee" : policy.mode} · ${policy.execution}`
+          : "report only",
       diagnostics: { ...diagnostics, device: dev, env: env() },
     });
 
@@ -99,6 +106,18 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
       update(inc, { status: "resolved", note: "recovered before the action ran", outcome: "Recovered on its own" });
       return done(issueId, inc);
     }
+    if (suggestOnly) {
+      inc.state = "reported";
+      inc.banner = proposeAction({
+        section: sectionLabel,
+        title: issue.title,
+        detail: issue.suggestion?.(policy) || action?.detail?.(policy),
+        mode: "info",
+        simulated: issue.simulated,
+      });
+      return; // stays open until clear(), then marked recovered
+    }
+
     if (!willAct) {
       inc.state = "reported";
       return; // stays open until clear(), then marked recovered
@@ -179,6 +198,9 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     if (!inc) return;
     if (inc.state === "reported") {
       update(inc, { status: "resolved", note: "recovered", outcome: "Recovered on its own" });
+      if (inc.banner && !inc.banner.decided) {
+        inc.banner.done("ok", "Back to normal.", "The problem cleared on its own.");
+      }
       done(issueId, inc);
     } else if (inc.state === "detected") {
       if (inc.banner && !inc.banner.decided) inc.banner.dismiss();

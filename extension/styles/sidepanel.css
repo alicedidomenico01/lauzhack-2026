@@ -211,21 +211,6 @@ select {
 .ring-badge.up { color: var(--ok); background: rgba(53, 200, 138, 0.14); }
 .ring-badge.down { color: var(--bad); background: rgba(239, 95, 95, 0.14); }
 
-.switch-btn {
-  width: 100%;
-  margin-top: 10px;
-  padding: 8px;
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.switch-btn:hover { border-color: var(--accent); color: var(--accent); }
-
 
 /* ---------- nested details ---------- */
 

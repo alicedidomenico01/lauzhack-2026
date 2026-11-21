@@ -32,7 +32,10 @@ function el(tag, cls, html) {
   return node;
 }
 
+// `mode: "info"` has no decision to make: it is a suggestion, not an offer.
+// Nothing to confirm, nothing to reject, so it shows no buttons at all.
 export function proposeAction({ section, title, detail, mode = "auto", simulated = false }) {
+  const isInfo = mode === "info";
   let resolveChoice;
   const handle = {
     choice: new Promise((resolve) => (resolveChoice = resolve)),
@@ -90,7 +93,11 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
   const kicker = el(
     "p",
     "action-kicker",
-    mode === "auto" ? `IT can fix this · ${section}` : `IT suggests a fix · ${section}`
+    isInfo
+      ? `Suggestion · ${section}`
+      : mode === "auto"
+        ? `IT can fix this · ${section}`
+        : `IT suggests a fix · ${section}`
   );
   if (simulated) kicker.append(" ", el("span", "action-tag", "simulated"));
 
@@ -103,12 +110,14 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
   body.append(kicker, titleEl, detailEl);
 
   const buttons = el("div", "action-buttons");
-  const yes = el("button", "action-yes", mode === "auto" ? "Confirm" : "Fix it");
-  const no = el("button", "action-reject", "Reject");
-  yes.type = no.type = "button";
-  yes.addEventListener("click", () => decide("apply"));
-  no.addEventListener("click", () => decide("reject"));
-  buttons.append(yes, no);
+  if (!isInfo) {
+    const yes = el("button", "action-yes", mode === "auto" ? "Confirm" : "Fix it");
+    const no = el("button", "action-reject", "Reject");
+    yes.type = no.type = "button";
+    yes.addEventListener("click", () => decide("apply"));
+    no.addEventListener("click", () => decide("reject"));
+    buttons.append(yes, no);
+  }
 
   node.append(icon, body, buttons);
   stack().append(node);
