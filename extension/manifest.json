@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Setup Check",
+  "version": "0.1.0",
+  "description": "Checks that your microphone actually picks up sound, before you join a meeting.",
+  "permissions": ["sidePanel"],
+  "action": {
+    "default_title": "Open Setup Check"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

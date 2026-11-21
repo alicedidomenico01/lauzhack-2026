@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Setup Check</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Setup Check</h1>
+      <p class="sub">Is your microphone actually picking you up?</p>
+    </header>
+
+    <section class="card">
+      <label class="label" for="device">Microphone</label>
+      <select id="device"></select>
+      <p id="deviceNote" class="note"></p>
+    </section>
+
+    <section class="card">
+      <div class="meter" aria-hidden="true">
+        <div class="meter-fill" id="meterFill"></div>
+      </div>
+      <div class="meter-readout">
+        <span id="level">—</span>
+        <span id="state" class="state">idle</span>
+      </div>
+    </section>
+
+    <button id="check" class="primary">Run check (3 s)</button>
+
+    <section id="result" class="result" hidden>
+      <p id="resultTitle" class="result-title"></p>
+      <p id="resultBody" class="result-body"></p>
+      <button id="retry" class="secondary" hidden></button>
+    </section>
+
+    <footer>
+      <p>
+        Everything runs in this panel. No audio is recorded, stored or sent
+        anywhere.
+      </p>
+    </footer>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
