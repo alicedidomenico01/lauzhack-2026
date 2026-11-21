@@ -1,9 +1,12 @@
 # Setup Check · LauzHack 2026 (Nexthink challenge)
 
-Catches what will break in your next call (network, microphone, camera, CPU),
+This tool catches what will break in your next call (for example, network, microphone, camera, CPU),
 fixes it from IT with the employee's consent, checks that the fix worked, and
 reports every incident with its diagnostics to a dashboard.
 
+Note that for this challenge we rely on NexThink technology, which already allows to control remotely employee's devices. Therefore, some parts are deliberately not implemented since they should be filled with the real product integration.
+
+Our project is made of two different parts:
 | Part | What it is | Run it |
 |---|---|---|
 | `extension/` | Chrome side panel: the four checks, the alerts, the remote actions | `chrome://extensions` → Developer mode → Load unpacked → `extension/` |
@@ -23,11 +26,10 @@ Every failure, real or simulated, takes the same path (`extension/lib/remedy.js`
 3. **Propose**: the action and its mode come from IT's policy, fetched every 10 s
    (defaults are built in, so the panel works without a server).
 4. **Act**: `real` runs on the device through the helper, `simulated` only goes
-   through the motions. The incident records which one actually happened.
+   through the motions. The incident records which one actually happened. Real or simulated depends if it can actually be run in-browser or if it's something that should be integrated later.
 5. **Verify**: the check re-measures (sound is back, frames flow, speed is up,
    CPU is down). If it is still broken the incident is **escalated**, and the
-   same fix is not retried for 45 s. After a rejection the employee is not asked
-   again for 60 s.
+   same fix is not retried for 45 s. 
 
 ## What the panel checks
 
