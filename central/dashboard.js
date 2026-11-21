@@ -60,13 +60,48 @@ function sourceBadge(incident) {
   return el("span", "badge ok", "live");
 }
 
+// A real tooltip, not the native one: the icon sits inside a scrolling table,
+// so the bubble is positioned in the viewport and can never be clipped.
+function attachTooltip(node, text) {
+  let bubble = null;
+
+  const show = () => {
+    if (!bubble) {
+      bubble = el("div", "tooltip");
+      bubble.textContent = text;
+      document.body.append(bubble);
+    }
+    bubble.hidden = false;
+    const box = node.getBoundingClientRect();
+    const width = bubble.offsetWidth;
+    const left = Math.max(8, Math.min(box.left + box.width / 2 - width / 2, window.innerWidth - width - 8));
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${box.bottom + 8}px`;
+  };
+
+  const hide = () => {
+    if (bubble) bubble.hidden = true;
+  };
+
+  node.addEventListener("mouseenter", show);
+  node.addEventListener("mouseleave", hide);
+  node.addEventListener("focus", show);
+  node.addEventListener("blur", hide);
+  // Click pins it open (useful on touch), anything else closes it.
+  node.addEventListener("click", (event) => {
+    event.stopPropagation();
+    show();
+  });
+  document.addEventListener("click", hide);
+  document.addEventListener("scroll", hide, true);
+}
+
 function infoIcon(text) {
   const node = el("span", "info", "i");
   node.tabIndex = 0;
   node.setAttribute("role", "note");
   node.setAttribute("aria-label", text);
-  node.dataset.tip = text;
-  node.title = text;
+  attachTooltip(node, text);
   return node;
 }
 
