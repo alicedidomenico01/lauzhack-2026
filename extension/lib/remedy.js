@@ -14,6 +14,7 @@ import { proposeAction } from "../ui/action-banner.js";
 
 const VERIFY_MS = 9000;
 const QUIET_AFTER_REJECT_MS = 60000; // do not nag after a "no"
+const QUIET_AFTER_TIMEOUT_MS = 30000; // nor after nobody answered
 const QUIET_AFTER_FAILURE_MS = 45000; // nor loop on a fix that did not work
 
 const open = new Map(); // issue id -> incident in progress
@@ -149,6 +150,13 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     const choice = await inc.banner.choice;
     if (choice === "dismissed") {
       update(inc, { status: "resolved", note: "recovered before the action ran", outcome: "Recovered on its own" });
+      return done(issueId, inc);
+    }
+    if (choice === "timeout") {
+      // Nobody answered. Nothing was applied, and this is not a rejection.
+      inc.banner.done("muted", "No answer.", "The banner faded after 10 s. Nothing was applied.");
+      update(inc, { status: "no_answer", note: "no answer within 10 s", outcome: "No answer" });
+      quietUntil.set(issueId, Date.now() + QUIET_AFTER_TIMEOUT_MS);
       return done(issueId, inc);
     }
     if (choice === "reject") {

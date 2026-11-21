@@ -73,7 +73,7 @@ DEFAULT_POLICIES = [
 MODES = {"auto", "ask", "off", "suggest"}
 EXECUTIONS = {"real", "simulated"}
 STATUSES = {"detected", "proposed", "applying", "fixed", "applied", "escalated",
-            "rejected", "failed", "reported", "resolved", "interrupted", "no_action"}
+            "rejected", "failed", "reported", "resolved", "interrupted", "no_action", "no_answer"}
 STALE_S = 120  # proposed/applying for longer than this: the panel was closed mid-action
 
 lock = threading.Lock()

@@ -34,6 +34,7 @@ const STATUS_LEVEL = {
   failed: "bad",
   interrupted: "warn",
   no_action: "neutral",
+  no_answer: "neutral",
 };
 
 const STATUS_LABEL = {
@@ -49,6 +50,7 @@ const STATUS_LABEL = {
   resolved: "Recovered",
   interrupted: "Interrupted",
   no_action: "No action",
+  no_answer: "No answer",
 };
 
 const badge = (status) => {

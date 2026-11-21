@@ -1,7 +1,8 @@
 // Remote-action banners: IT says what it wants to do on this device, the
-// employee decides. Nothing is applied on a timer: an alert that vanishes
-// while you are in a meeting is the same as no alert. Several open at once
-// stack, so it is obvious how many are waiting.
+// employee decides. Several open at once stack, so it is obvious how many are
+// waiting. An unanswered banner fades after a while instead of staying on
+// screen forever, and that is recorded as "no answer", not as a rejection.
+// Hovering pauses the fade, so it can still be answered.
 
 const STACK_ID = "action-stack";
 
@@ -34,6 +35,8 @@ function el(tag, cls, html) {
 
 // `mode: "info"` has no decision to make: it is a suggestion, not an offer.
 // Nothing to confirm, nothing to reject, so it shows no buttons at all.
+const AUTO_DISMISS_MS = 10000;
+
 export function proposeAction({ section, title, detail, mode = "auto", simulated = false }) {
   const isInfo = mode === "info";
   let resolveChoice;
@@ -119,9 +122,45 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
     buttons.append(yes, no);
   }
 
-  node.append(icon, body, buttons);
+  // A countdown the eye can follow: the bar empties, then the banner fades.
+  const progress = el("div", "action-progress");
+  const bar = el("span");
+  progress.append(bar);
+
+  let timer = 0;
+  const stopTimer = () => {
+    clearTimeout(timer);
+    timer = 0;
+    bar.style.transition = "none";
+    bar.style.width = `${bar.getBoundingClientRect().width}px`;
+  };
+  const startTimer = (ms) => {
+    if (isInfo) return;
+    stopTimer();
+    requestAnimationFrame(() => {
+      bar.style.transition = `width ${ms}ms linear`;
+      bar.style.width = "0%";
+    });
+    timer = setTimeout(() => decide("timeout"), ms);
+  };
+
+  node.append(icon, body, buttons, progress);
   stack().append(node);
 
   Object.assign(handle, { node, icon, titleEl, detailEl, buttons });
+
+  if (!isInfo) {
+    startTimer(AUTO_DISMISS_MS);
+    // Reading it should stop the clock.
+    node.addEventListener("mouseenter", stopTimer);
+    node.addEventListener("focusin", stopTimer);
+    node.addEventListener("mouseleave", () => {
+      if (!handle.decided) startTimer(AUTO_DISMISS_MS / 2);
+    });
+    node.addEventListener("focusout", () => {
+      if (!handle.decided) startTimer(AUTO_DISMISS_MS / 2);
+    });
+  }
+
   return handle;
 }
