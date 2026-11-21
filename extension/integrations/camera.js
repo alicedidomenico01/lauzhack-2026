@@ -44,7 +44,8 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const pct = (x) => `${Math.round(x * 100)}%`;
 const RANK = { unknown: 0, ok: 1, warn: 2, bad: 3 };
 
-export function mountCamera(root, { setStatus }) {
+export function mountCamera(root, api) {
+  const { setStatus, remedy } = api;
   root.innerHTML = `
     <select data-device aria-label="Camera" hidden></select>
     <div class="preview">
@@ -110,6 +111,7 @@ export function mountCamera(root, { setStatus }) {
   const zctx = zebra.getContext("2d");
 
   let active = false;
+  let damaged = false; // demo: frames stop arriving, like a hung camera driver
   let devices = [];
   let deviceId = null;
 
@@ -525,6 +527,7 @@ export function mountCamera(root, { setStatus }) {
 
   function evaluate() {
     const r = assess();
+    syncRemedy(r);
     renderDetails(r);
     drawOverlay(r); // live, not smoothed: it follows you as you move
 
@@ -535,6 +538,71 @@ export function mountCamera(root, { setStatus }) {
     if (!(r.found[0]?.urgent || agreed || shown === null || shown === "starting")) return;
     shown = key;
     render(r);
+  }
+
+  // ---------- remote actions ----------
+
+  function syncRemedy(r) {
+    const keys = new Set(r.found.map((f) => f.key));
+    for (const key of ["frozen", "black"]) {
+      if (keys.has(key)) remedy.raise(issue(key));
+      else remedy.clear(key);
+    }
+  }
+
+  function diagnostics() {
+    const dev = devices.find((d) => d.deviceId === deviceId);
+    const { fps, gap } = frameStats();
+    return {
+      camera: dev?.name ?? "unknown",
+      virtualCamera: !!dev?.isVirtual,
+      cameras: devices.map((d) => d.name),
+      resolution: frameSize ? `${frameSize.w}×${frameSize.h}` : null,
+      fps: fps === null ? null : Math.round(fps),
+      longestGapMs: gap === null ? null : Math.round(gap),
+      msSinceLastFrame: lastFrameAt ? Math.round(performance.now() - lastFrameAt) : null,
+      brightness: last ? Math.round(last.mean) : null,
+      faceFound: last ? !!last.face : null,
+      faceDetector: faceDetectorState(),
+      trackMutedBySystem: muted,
+      simulatedDamage: damaged,
+    };
+  }
+
+  const framesFlowing = () => lastFrameAt && performance.now() - lastFrameAt < 600 && frameTimes.length > 5;
+
+  function issue(key) {
+    const name = nameOf(deviceId);
+    if (key === "black") {
+      // Nothing to do remotely: a shutter or a finger. Reported so IT sees it.
+      return { key, severity: "bad", simulated: damaged, diagnostics, title: `${name} shows a black image` };
+    }
+    return {
+      key,
+      severity: "bad",
+      simulated: damaged,
+      diagnostics,
+      title: `${name} is frozen`,
+      action: {
+        title: "Restart the camera",
+        detail: (p) => `Reopens the camera stream${p.execution === "real" ? "" : " (simulated)"}.`,
+        async run(p) {
+          const wasDamaged = damaged;
+          if (wasDamaged) {
+            damaged = false;
+            api.damageChanged?.(false);
+            ui.video.play().catch(() => {});
+          }
+          if (p.execution !== "real") return { ok: true, simulated: true, detail: "camera restarted" };
+          const id = deviceId;
+          await useDevice(id);
+          return stream
+            ? { ok: true, simulated: false, detail: "camera restarted" }
+            : { ok: false, detail: "The camera would not reopen." };
+        },
+        verify: () => remedy.waitFor(framesFlowing, 6000),
+      },
+    };
   }
 
   // ---------- frames ----------
@@ -550,6 +618,10 @@ export function mountCamera(root, { setStatus }) {
         if (done || seq !== openSeq) {
           frame?.close();
           break;
+        }
+        if (damaged) {
+          frame.close();
+          continue;
         }
         const now = performance.now();
         lastFrameAt = now;
@@ -573,7 +645,7 @@ export function mountCamera(root, { setStatus }) {
   // Older Chrome without MediaStreamTrackProcessor: sample the <video>.
   function readVideo(seq) {
     fallbackTimer = setInterval(() => {
-      if (busy || ui.video.readyState < 2) return;
+      if (busy || damaged || ui.video.readyState < 2) return;
       grab(ui.video, ui.video.videoWidth, ui.video.videoHeight);
       analyse(seq);
     }, SAMPLE_MS);
@@ -701,6 +773,11 @@ export function mountCamera(root, { setStatus }) {
   ui.device.addEventListener("change", (e) => useDevice(e.target.value));
 
   return {
+    setDamage(on) {
+      damaged = !!on;
+      if (damaged) ui.video.pause();
+      else ui.video.play().catch(() => {});
+    },
     async start() {
       if (active) return;
       active = true;

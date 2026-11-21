@@ -11,6 +11,7 @@
 
 import { permissionHelp } from "../ui/permission.js";
 import { distinctDevices, fillSelect, explainMediaError } from "../lib/media.js";
+import { helper } from "../lib/central.js";
 
 const DEAD_DB = -85; // a working mic never goes this low: room noise is above it
 const DEAD_MS = 2000; // silence this long on one device = it is dead
@@ -36,7 +37,8 @@ function percentile(xs, p) {
   return s[Math.min(s.length - 1, Math.floor(s.length * p))];
 }
 
-export function mountAudio(root, { setStatus }) {
+export function mountAudio(root, api) {
+  const { setStatus, remedy } = api;
   root.innerHTML = `
     <select data-device aria-label="Microphone"></select>
     <div class="meter"><div class="meter-fill" data-fill></div></div>
@@ -76,6 +78,8 @@ export function mountAudio(root, { setStatus }) {
   };
 
   let active = false;
+  let damaged = false; // demo: the input delivers digital silence, like a muted mic
+  let allDead = false;
   let devices = [];
   let deviceId = null;
   let manual = false; // the user picked this device: never switch away from it
@@ -123,6 +127,7 @@ export function mountAudio(root, { setStatus }) {
 
   function readFrame() {
     analyser.getFloatTimeDomainData(buf);
+    if (damaged) buf.fill(0);
     let sum = 0;
     let clipped = 0;
     for (let i = 0; i < buf.length; i++) {
@@ -270,7 +275,8 @@ export function mountAudio(root, { setStatus }) {
 
     if (isDead) {
       results.set(deviceId, "dead");
-      if (!manual) {
+      // A simulated damage silences every input: scanning them would prove nothing.
+      if (!manual && !damaged) {
         if (scanFrom === null) scanFrom = deviceId;
         // Real devices before virtual ones (OBS, BlackHole...).
         const next = [...devices]
@@ -298,6 +304,7 @@ export function mountAudio(root, { setStatus }) {
       }
 
       const all = devices.length > 1 && devices.every((d) => results.get(d.deviceId) === "dead");
+      allDead = all;
       verdict(
         "bad",
         all
@@ -307,6 +314,7 @@ export function mountAudio(root, { setStatus }) {
         "no signal"
       );
       if (!all && devices.length < 2) ui.hint.textContent = "";
+      sync(["dead"]);
       return;
     }
 
@@ -316,8 +324,13 @@ export function mountAudio(root, { setStatus }) {
     }
 
     // Alive. If we got here through a scan, say what we found.
+    const sysDefault = defaultDevice();
+    const wrongDefault =
+      !!scanFrom && scanFrom !== deviceId && !!sysDefault && sysDefault.deviceId !== deviceId &&
+      results.get(sysDefault.deviceId) === "dead";
+    const keep = wrongDefault ? ["wrongdefault"] : [];
     if (scanFrom && scanFrom !== deviceId) {
-      const def = defaultDevice();
+      const def = sysDefault;
       ui.hint.textContent =
         `${nameOf(scanFrom)} sends nothing; ${name} works.` +
         (def && def.deviceId !== deviceId
@@ -334,18 +347,132 @@ export function mountAudio(root, { setStatus }) {
       } else {
         verdict("", "Mic works. Listening for your voice…", "busy", "listening");
       }
+      sync(keep);
       return;
     }
 
     if (clips >= CLIP_FRAMES) {
       verdict("warn", "Too loud: your voice is clipping and will sound distorted. Lower the input volume or move back.", "warn", "clipping");
+      sync([...keep, "clipping"]);
     } else if (voicePeak < QUIET_DB) {
       verdict("warn", `Too quiet: your voice peaks at ${voicePeak.toFixed(0)} dBFS. Move closer or raise the input volume.`, "warn", "too quiet");
+      sync([...keep, "quiet"]);
     } else if (floor > NOISY_DB) {
       verdict("warn", `Your voice comes through, but the room is loud (${floor.toFixed(0)} dBFS). Others will hear it.`, "warn", "noisy");
+      sync(keep);
     } else {
       verdict("ok", `Picking you up clearly on ${name}.`, "ok", "ok");
+      sync(keep);
     }
+  }
+
+  // ---------- remote actions ----------
+
+  const ISSUE_KEYS = ["dead", "wrongdefault", "quiet", "clipping"];
+
+  // Called on every decisive evaluation: raise what is wrong, clear the rest.
+  function sync(activeKeys) {
+    for (const key of ISSUE_KEYS) {
+      if (activeKeys.includes(key)) remedy.raise(issue(key));
+      else remedy.clear(key);
+    }
+  }
+
+  function endDamage() {
+    if (!damaged) return;
+    damaged = false;
+    api.damageChanged?.(false);
+  }
+
+  const micAlive = () => liveAt && Date.now() - liveAt < 600;
+
+  async function diagnostics() {
+    const st = await helper({ cmd: "audio_status" }, 2500);
+    return {
+      microphone: nameOf(deviceId),
+      systemDefault: defaultDevice()?.name ?? null,
+      pickedByHand: manual,
+      inputs: devices.map((d) => `${d.name}: ${results.get(d.deviceId) || "untested"}${d.isVirtual ? " (virtual)" : ""}`),
+      noiseFloorDb: floorReady ? Math.round(floor) : null,
+      voicePeakDb: voicePeak > -100 ? Math.round(voicePeak) : null,
+      clippedFrames: frames.filter((f) => f.clip).length,
+      trackMutedBySystem: muted,
+      inputVolume: st ? st.input_volume ?? null : "unknown (no helper)",
+      input: ui.input.textContent,
+      simulatedDamage: damaged,
+    };
+  }
+
+  function volumeStep(sign) {
+    return {
+      title: sign > 0 ? "Raise the microphone input volume" : "Lower the microphone input volume",
+      detail: (p) => `By ${p.params.step ?? 20} points${p.execution === "real" ? "" : " (simulated)"}.`,
+      async run(p) {
+        const delta = sign * (Number(p.params.step) || 20);
+        const res = p.execution === "real" ? await helper({ cmd: "set_input_volume", delta }) : null;
+        // Judge the voice again from scratch at the new level.
+        voicePeak = -100;
+        frames = [];
+        if (res?.ok) return { ok: true, simulated: false, detail: `input volume ${res.before}% → ${res.input_volume}%` };
+        return { ok: true, simulated: true, detail: `input volume ${delta > 0 ? "+" : ""}${delta} points` };
+      },
+      // Needs the employee to speak again: the check shows the new level live.
+      verify: null,
+    };
+  }
+
+  function issue(key) {
+    const name = nameOf(deviceId);
+    const base = { key, simulated: damaged, diagnostics };
+
+    if (key === "dead") {
+      return {
+        ...base,
+        severity: "bad",
+        title: allDead ? "No microphone delivers any sound" : `${name} sends no sound`,
+        action: {
+          title: "Restore the microphone",
+          detail: (p) =>
+            `Sets the input volume to ${p.params.inputVolume ?? 75}%${p.execution === "real" ? " on this computer" : " (simulated)"}.`,
+          async run(p) {
+            const value = Number(p.params.inputVolume) || 75;
+            const res = p.execution === "real" ? await helper({ cmd: "set_input_volume", value }) : null;
+            endDamage(); // the simulated cause goes away; a real one only if the fix worked
+            if (res?.ok) {
+              return { ok: true, simulated: false, detail: `input volume ${res.before ?? "?"}% → ${res.input_volume}%` };
+            }
+            const why = p.execution === "real" ? " (no helper on this computer)" : "";
+            return { ok: true, simulated: true, detail: `input volume set to ${value}%${why}` };
+          },
+          verify: () => remedy.waitFor(micAlive, 7000),
+        },
+      };
+    }
+
+    if (key === "wrongdefault") {
+      const def = defaultDevice();
+      return {
+        ...base,
+        severity: "bad",
+        title: `${def?.name ?? "The system microphone"} sends no sound; ${name} works`,
+        action: {
+          title: `Make ${name} the system microphone`,
+          detail: (p) => `So Meet and Teams use the microphone that works${p.execution === "real" ? "" : " (simulated)"}.`,
+          async run(p) {
+            const res = p.execution === "real" ? await helper({ cmd: "switch_input", name }) : null;
+            if (res?.ok) return { ok: true, simulated: false, detail: `system microphone is now ${name}` };
+            if (p.execution === "real") {
+              return { ok: false, detail: res?.reason || "This computer cannot switch microphones remotely (no helper)." };
+            }
+            return { ok: true, simulated: true, detail: `system microphone set to ${name}` };
+          },
+          verify: () => remedy.waitFor(() => defaultDevice()?.deviceId === deviceId && micAlive(), 7000),
+        },
+      };
+    }
+
+    if (key === "quiet") return { ...base, severity: "warn", title: "Voice too quiet", action: volumeStep(+1) };
+    return { ...base, severity: "warn", title: "Voice distorted (clipping)", action: volumeStep(-1) };
   }
 
   async function onDeviceChange() {
@@ -389,6 +516,10 @@ export function mountAudio(root, { setStatus }) {
   });
 
   return {
+    setDamage(on) {
+      damaged = !!on;
+      if (damaged) scanFrom = null;
+    },
     async start() {
       if (active) return;
       active = true;

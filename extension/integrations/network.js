@@ -1,4 +1,5 @@
 import { createRing } from "../ui/ring.js";
+import { helper, sleep } from "../lib/central.js";
 
 const PROBE_URL = "https://www.gstatic.com/generate_204";
 const SPEED_URL = "https://speed.cloudflare.com/__down";
@@ -36,22 +37,19 @@ function formatSpeed(mbps) {
   return { value: String(Math.round(mbps * 1000)), unit: "kb/s" };
 }
 
-export function mountNetwork(root, { setStatus }) {
+export function mountNetwork(root, api) {
+  const { setStatus, remedy } = api;
   root.innerHTML = `
     <div class="net">
       <div class="ring-top">
         <div class="ring-holder"></div>
-        <button class="ring-demo" type="button" title="Simulate a shaky connection (demo)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 12h4l2.5-7 3.5 14 2.5-7H22" />
-          </svg>
-        </button>
       </div>
 
       <p class="verdict" data-verdict>Measuring…</p>
       <p class="conn-name" data-conn>—</p>
+      <p class="net-note" data-note></p>
 
-      <button class="switch-btn" data-switch hidden>Switch Network</button>
+      <button class="switch-btn" data-switch hidden>Switch network now</button>
 
       <details class="more">
         <summary>
@@ -77,7 +75,7 @@ export function mountNetwork(root, { setStatus }) {
     verdict: root.querySelector("[data-verdict]"),
     conn: root.querySelector("[data-conn]"),
     switchBtn: root.querySelector("[data-switch]"),
-    demo: root.querySelector(".ring-demo"),
+    note: root.querySelector("[data-note]"),
     rtt: root.querySelector("[data-rtt]"),
     jitter: root.querySelector("[data-jitter]"),
     loss: root.querySelector("[data-loss]"),
@@ -93,7 +91,8 @@ export function mountNetwork(root, { setStatus }) {
   let ssid = null;
   let speedEpoch = 0;
   let ssidPending = false;
-  let demo = false;
+  let demo = false; // the damage: a simulated shaky connection
+  let switched = null; // { to, from, before, at, simulated } after a network switch
   let probeTimer = 0;
   let speedTimer = 0;
   let ssidTimer = 0;
@@ -209,9 +208,12 @@ export function mountNetwork(root, { setStatus }) {
   function render() {
     const rtt = samples.length ? median(samples) : null;
     const jit = jitter(samples);
-    const label = demo
-      ? "Demo mode · simulated connection"
-      : ssid || FALLBACK_SSID;
+    const recentSwitch = switched && Date.now() - switched.at < 60000;
+    const label = recentSwitch
+      ? `${switched.to}${switched.simulated ? " · simulated switch" : ""}`
+      : demo
+        ? "Demo mode · simulated connection"
+        : ssid || FALLBACK_SSID;
     const value0 = speed;
 
     ui.rtt.textContent = rtt === null ? "—" : `${rtt.toFixed(0)} ms`;
@@ -247,16 +249,24 @@ export function mountNetwork(root, { setStatus }) {
 
     setStatus(level, level === "ok" ? "ok" : "attention");
 
-    ui.switchBtn.hidden = demo || level !== "bad";
+    ui.switchBtn.hidden = level !== "bad";
+
+    // After a switch, show what it bought: the speed before and now.
+    if (recentSwitch && switched.before !== null && !measuringAfterSwitch()) {
+      const d = value0 - switched.before;
+      ui.note.textContent = `${formatSpeed(switched.before).value} ${formatSpeed(switched.before).unit} on ${switched.from} → ${value} ${unit} now (${d >= 0 ? "+" : ""}${d.toFixed(1)} Mb/s)`;
+    } else if (!recentSwitch) {
+      ui.note.textContent = "";
+    }
+
+    if (level === "bad") remedy.raise(issue());
+    else remedy.clear("slow");
   }
 
-  ui.demo.addEventListener("click", () => {
-    demo = !demo;
-    ui.demo.classList.toggle("on", demo);
-    ui.demo.title = demo
-      ? "Demo mode: simulated bad connection. Click to stop."
-      : "Simulate a shaky connection (demo)";
+  // The first sample after a switch still carries the old network's average.
+  const measuringAfterSwitch = () => switched && Date.now() - switched.at < 1500;
 
+  function resetMeasurements() {
     samples = [];
     attempts = 0;
     fails = 0;
@@ -265,17 +275,77 @@ export function mountNetwork(root, { setStatus }) {
     speedUnavailable = false;
     speedEpoch++;
     ui.switchBtn.hidden = true;
+  }
 
+  function setDemo(on) {
+    demo = !!on;
+    if (demo) switched = null;
+    resetMeasurements();
     render();
     measureSpeed();
     probe();
+  }
+
+  // ---------- remote action ----------
+
+  function diagnostics() {
+    const rtt = samples.length ? median(samples) : null;
+    return {
+      speedMbps: speed === null ? null : Number(speed.toFixed(2)),
+      latencyMs: rtt === null ? null : Math.round(rtt),
+      jitterMs: Math.round(jitter(samples)),
+      lostProbes: `${fails}/${attempts}`,
+      chromeEstimate: chromeLabel(),
+      ssid: ssid ?? "unknown (no helper)",
+      simulatedDamage: demo,
+    };
+  }
+
+  function issue() {
+    const from = ssid || FALLBACK_SSID;
+    const shown = speed ? formatSpeed(speed) : null;
+    return {
+      key: "slow",
+      severity: "bad",
+      simulated: demo,
+      diagnostics,
+      title: !speed ? "No connection" : `Very slow connection (${shown.value} ${shown.unit})`,
+      action: {
+        title: "Switch to a better Wi-Fi network",
+        detail: (p) =>
+          `Moves this laptop from ${from} to ${p.params.targetNetwork || "a known network"}${p.execution === "real" ? "" : " (simulated)"}.`,
+        async run(p) {
+          const to = p.params.targetNetwork || "eduroam";
+          const before = speed;
+          let real = false;
+          if (p.execution === "real" && !demo) {
+            const res = await helper({ cmd: "wifi_join", ssid: to }, 25000);
+            if (!res?.ok) return { ok: false, detail: res?.reason || `Could not join ${to} remotely (no helper).` };
+            real = true;
+          } else {
+            await sleep(1200); // the time a real switch takes, roughly
+          }
+          if (demo) api.damageChanged?.(false);
+          demo = false;
+          resetMeasurements();
+          switched = { to, from, before, at: Date.now(), simulated: !real };
+          render();
+          measureSpeed();
+          probe();
+          return { ok: true, simulated: !real, detail: `switched from ${from} to ${to}` };
+        },
+        verify: () => remedy.waitFor(() => speed !== null && speed >= SPEED_WARN, 9000),
+      },
+    };
+  }
+
+  // The employee asks for the switch: same action as the remote one, no countdown.
+  ui.switchBtn.addEventListener("click", () => {
+    if (speed !== null) remedy.raise(issue(), { userInitiated: true });
   });
 
-  // The button is a prop: switching Wi-Fi cannot be done from a browser, so the
-  // presenter explains it. Nothing is simulated behind it.
-  ui.switchBtn.addEventListener("click", () => {});
-
   return {
+    setDamage: setDemo,
     start() {
       if (probeTimer) return;
 
@@ -287,8 +357,6 @@ export function mountNetwork(root, { setStatus }) {
       speedUnavailable = false;
       speedEpoch++;
       ssid = null;
-      demo = false;
-      ui.demo.classList.remove("on");
       ui.switchBtn.hidden = true;
 
       probe();

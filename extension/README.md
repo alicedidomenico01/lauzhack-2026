@@ -24,8 +24,12 @@ extension/
   app.js                 wiring only: mounts modules, starts/stops them
   ui/
     accordion.js         open/close + status pill
+    action-banner.js     the remote-action banner: countdown + Reject, or Fix it / Not now
+    damage.js            demo ⚡ button that breaks a check on purpose
     ring.js              circular gauge
   lib/
+    central.js           device id, incident outbox, IT policies, native helper calls
+    remedy.js            detect → report → propose (opt-out) → apply → verify → escalate
     media.js             real devices (no "default" duplicates) + getUserMedia errors explained
     face.js              lazy local face detector (loads vendor/face-api on first camera start)
   vendor/face-api/       face-api 1.7.15 + Tiny Face Detector model (MIT)
@@ -152,6 +156,45 @@ The honest fix for the two "cannot" rows is a **native messaging host** — a
 small local binary that runs `networkQuality -c` (built into macOS), CoreWLAN
 scans, `vm_stat` and audio-device switching. That is also the bridge from
 "detect" to "act".
+
+## Remote actions
+
+Every failure, real or simulated, takes the same path (`lib/remedy.js`):
+
+1. **Report**: an incident with diagnostics goes to the central server
+   (`lib/central.js`). If it is down, incidents wait in an outbox in
+   `chrome.storage` and are sent when it is back; the header says
+   *IT offline · N queued*.
+2. **Propose**, as IT's policy for that failure says (fetched every 10 s,
+   defaults built in): **auto** = banner with a countdown bar and **Reject**
+   (opt-out, 3 s by default), **ask** = **Fix it / Not now** (opt-in),
+   **off** = report only. One banner at a time; others queue.
+3. **Apply**: `real` runs it on the device when it can, `simulated` goes
+   through the motions. The incident records which one actually happened.
+4. **Verify**: the check itself confirms the problem is gone (sound is back,
+   frames flow, speed is up, CPU is down). If not, the incident is
+   **escalated** to IT, and the same fix is not retried for 45 s. After a
+   rejection the employee is not asked again for 60 s.
+
+| Failure | Action | Real when |
+|---|---|---|
+| Network very slow / down | Switch to `targetNetwork` (policy) | helper + policy `real` (`networksetup`, known networks only) |
+| Mic sends no sound | Input volume to 75% | helper (`osascript`) |
+| System mic dead, another works | Make the working one the system default | helper + `brew install switchaudio-osx` |
+| Voice too quiet / clipping | Input volume ±20 (ask first) | helper |
+| Camera frozen | Restart the camera stream | always (in the panel) |
+| Camera black | Report only: shutter or cover | — |
+| CPU overloaded / memory full | Quit the top app | helper + policy `real`; never Chrome, Finder or system apps |
+
+**Demo damage**: the ⚡ in each section header breaks that check on purpose:
+slow network, a microphone that delivers digital silence, a camera whose
+frames stop, a runaway process at 98% CPU. Everything downstream is the real
+code path; incidents are tagged *simulated damage* in the banner and the
+dashboard. Fixing a simulated damage clears it and flips the ⚡ back.
+
+The **Switch network now** button (shown when the connection is bad) runs the
+same action immediately, without the countdown, and the panel then shows the
+speed before and after.
 
 ## Next
 

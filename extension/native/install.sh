@@ -1,5 +1,6 @@
 #!/bin/bash
-# Installs the native messaging host that lets the extension read the Wi-Fi SSID.
+# Installs the native messaging host: Wi-Fi name, CPU/memory, and the remote
+# actions (microphone volume and input, Wi-Fi join, quit an app).
 # Usage: ./install.sh <extension-id>
 # The extension id is on chrome://extensions (Developer mode on).
 
@@ -22,7 +23,7 @@ mkdir -p "$DEST"
 cat > "$DEST/com.setupcheck.host.json" <<JSON
 {
   "name": "com.setupcheck.host",
-  "description": "Setup Check local helper (Wi-Fi SSID)",
+  "description": "Setup Check local helper (Wi-Fi, CPU, audio, remote actions)",
   "path": "$HOST",
   "type": "stdio",
   "allowed_origins": ["chrome-extension://$EXT_ID/"]

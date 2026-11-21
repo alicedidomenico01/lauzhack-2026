@@ -8,10 +8,23 @@ using the native messaging framing (4-byte little-endian length, then UTF-8 JSON
   {"cmd": "wifi"}   -> {"ssid": "freewifi-epfl", "interface": "en0", ...}
   {"cmd": "stats"}  -> {"cpu_percent": 37.4, "memory_free_percent": 42,
                         "top": "Google Chrome", "top_cpu": 18.2, "cores": 10}
+
+Remote actions (the extension only calls these after the employee had the
+chance to reject them):
+
+  {"cmd": "whoami"}                       -> {"name": "Alice's MacBook Pro", "os": "macOS 14.5"}
+  {"cmd": "audio_status"}                 -> {"input_volume": 0, "default_input": "MacBook Pro Microphone"}
+  {"cmd": "set_input_volume", "value": 75}   (or "delta": 20)
+                                          -> {"ok": true, "before": 0, "input_volume": 75}
+  {"cmd": "switch_input", "name": "AirPods Pro"}   needs `brew install switchaudio-osx`
+  {"cmd": "wifi_join", "ssid": "eduroam"}          a network this Mac already knows
+  {"cmd": "quit_app", "name": "Docker Desktop"}    asks the app to quit, never system apps
 """
 
 import json
+import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -179,6 +192,137 @@ def stats():
     return payload
 
 
+# ---------------------------------------------------------------- remote actions
+
+# Chrome starts native hosts with a minimal PATH: look in Homebrew's places too.
+EXTRA_PATHS = ["/opt/homebrew/bin", "/usr/local/bin"]
+
+# Never quit these, whatever the extension asks.
+PROTECTED_APPS = {
+    "finder", "dock", "systemuiserver", "windowserver", "loginwindow", "kernel_task",
+    "google chrome", "chrome", "google chrome helper", "system settings", "system preferences",
+    "launchd", "controlcenter", "coreaudiod", "python", "python3",
+}
+
+
+def run_full(cmd, timeout=10):
+    """(exit code, stdout, stderr); never raises."""
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout.strip(), p.stderr.strip()
+    except Exception as e:
+        return 1, "", str(e)
+
+
+def tool(name):
+    return shutil.which(name, path=os.pathsep.join([os.environ.get("PATH", ""), *EXTRA_PATHS]))
+
+
+def clean_name(value, limit=100):
+    """A device, network or app name: plain text, no control characters."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or len(value) > limit or any(ord(c) < 32 for c in value):
+        return None
+    return value
+
+
+def whoami():
+    name = run(["scutil", "--get", "ComputerName"]).strip() or None
+    version = run(["sw_vers", "-productVersion"]).strip()
+    return {"name": name, "os": f"macOS {version}" if version else None}
+
+
+def input_volume():
+    out = run(["osascript", "-e", "input volume of (get volume settings)"]).strip()
+    return int(out) if out.isdigit() else None
+
+
+def audio_status():
+    status = {"input_volume": input_volume(), "switch_available": bool(tool("SwitchAudioSource"))}
+    if status["switch_available"]:
+        code, out, _ = run_full([tool("SwitchAudioSource"), "-c", "-t", "input"])
+        status["default_input"] = out if code == 0 and out else None
+    return status
+
+
+def set_input_volume(message):
+    before = input_volume()
+    if "value" in message:
+        target = message.get("value")
+    else:
+        delta = message.get("delta")
+        if not isinstance(delta, (int, float)) or before is None:
+            return {"ok": False, "reason": "need a value, or a delta and a readable volume"}
+        target = before + delta
+    if not isinstance(target, (int, float)):
+        return {"ok": False, "reason": "value must be a number"}
+    target = int(max(0, min(100, round(target))))
+    code, _, err = run_full(["osascript", "-e", f"set volume input volume {target}"])
+    if code != 0:
+        return {"ok": False, "reason": err or "osascript failed", "before": before}
+    return {"ok": True, "before": before, "input_volume": input_volume()}
+
+
+def switch_input(message):
+    name = clean_name(message.get("name"))
+    if not name:
+        return {"ok": False, "reason": "bad device name"}
+    binary = tool("SwitchAudioSource")
+    if not binary:
+        return {"ok": False, "reason": "SwitchAudioSource is not installed (brew install switchaudio-osx)"}
+    code, out, err = run_full([binary, "-t", "input", "-s", name])
+    if code != 0:
+        return {"ok": False, "reason": err or out or f"could not switch to {name}"}
+    return {"ok": True, "default_input": name}
+
+
+def wifi_join(message):
+    ssid = clean_name(message.get("ssid"), limit=32)
+    if not ssid:
+        return {"ok": False, "reason": "bad network name"}
+    iface = wifi_interfaces()[0]
+    # Without a password this joins networks whose password is in the keychain.
+    code, out, err = run_full(["networksetup", "-setairportnetwork", iface, ssid], timeout=25)
+    text = (out + " " + err).strip()
+    if code != 0 or re.search(r"(could not|failed|error)", text, re.I):
+        return {"ok": False, "reason": text or f"could not join {ssid}"}
+    return {"ok": True, "ssid": ssid, "interface": iface}
+
+
+APPLESCRIPT_RUNNING = ["-e", "on run argv", "-e", "return application (item 1 of argv) is running", "-e", "end run"]
+APPLESCRIPT_QUIT = ["-e", "on run argv", "-e", "tell application (item 1 of argv) to quit", "-e", "end run"]
+
+
+def quit_app(message):
+    name = clean_name(message.get("name"))
+    if not name:
+        return {"ok": False, "reason": "bad app name"}
+    if name.lower() in PROTECTED_APPS or name.lower().startswith("google chrome"):
+        return {"ok": False, "reason": f"{name} is protected and is never quit remotely"}
+    # The name travels as an argument, never inside the script text.
+    code, out, _ = run_full(["osascript", *APPLESCRIPT_RUNNING, name])
+    if code != 0 or out != "true":
+        return {"ok": False, "reason": f"{name} is not a running app that can be asked to quit"}
+    code, _, err = run_full(["osascript", *APPLESCRIPT_QUIT, name], timeout=15)
+    if code != 0:
+        return {"ok": False, "reason": err or f"{name} refused to quit"}
+    return {"ok": True, "quit": name}
+
+
+COMMANDS = {
+    "wifi": lambda m: wifi(),
+    "stats": lambda m: stats(),
+    "whoami": lambda m: whoami(),
+    "audio_status": lambda m: audio_status(),
+    "set_input_volume": set_input_volume,
+    "switch_input": switch_input,
+    "wifi_join": wifi_join,
+    "quit_app": quit_app,
+}
+
+
 # ---------------------------------------------------------------- main
 
 def main():
@@ -187,12 +331,14 @@ def main():
         return
 
     cmd = message.get("cmd")
-    if cmd == "wifi":
-        write_message(wifi())
-    elif cmd == "stats":
-        write_message(stats())
-    else:
+    handler = COMMANDS.get(cmd)
+    if not handler:
         write_message({"error": f"unknown cmd: {cmd}"})
+        return
+    try:
+        write_message(handler(message))
+    except Exception as e:  # always answer: Chrome waits for one reply
+        write_message({"ok": False, "reason": f"{cmd} failed: {e}"})
 
 
 if __name__ == "__main__":

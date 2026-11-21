@@ -1,12 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Setup Check",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Checks that your microphone actually picks up sound, before you join a meeting.",
-  "permissions": ["sidePanel", "nativeMessaging", "system.cpu", "system.memory"],
+  "permissions": [
+    "sidePanel",
+    "nativeMessaging",
+    "system.cpu",
+    "system.memory",
+    "storage"
+  ],
   "host_permissions": [
     "https://www.gstatic.com/*",
-    "https://speed.cloudflare.com/*"
+    "https://speed.cloudflare.com/*",
+    "http://localhost:8787/*",
+    "http://127.0.0.1:8787/*"
   ],
   "action": {
     "default_title": "Open Setup Check"
