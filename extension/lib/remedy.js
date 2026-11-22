@@ -64,13 +64,12 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
   async function raise(issue, { userInitiated = false } = {}) {
     const issueId = idOf(issue.key);
 
-    // A failure triggered by hand must always produce a fresh alert. An earlier
-    // "reject" (quiet window) or a report still open must not swallow it.
+    // A failure triggered by hand must produce a fresh alert after an earlier
+    // "reject" or "no answer". An incident still on screen is left alone: it is
+    // the dedupe, and forgetting it here re-created one banner per tick.
     if (issue.simulated && !userInitiated) {
       const current = open.get(issueId);
-      if (!current || current.state === "reported" || current.banner?.decided) {
-        forget(issue.key);
-      }
+      if (!current || current.banner?.decided) forget(issue.key);
       quietUntil.delete(issueId);
     }
 
