@@ -102,7 +102,11 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
         ? `IT can fix this · ${section}`
         : `IT suggests a fix · ${section}`
   );
-  if (simulated) kicker.append(" ", el("span", "action-tag", "simulated"));
+  if (simulated) {
+    const tag = el("span", "action-tag", "simulated");
+    tag.title = "This failure was triggered on purpose from the panel";
+    kicker.append(" ", tag);
+  }
 
   const titleEl = el("p", "action-title");
   titleEl.textContent = title;

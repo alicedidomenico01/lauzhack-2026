@@ -294,6 +294,9 @@ export function mountNetwork(root, api) {
   function setDemo(on) {
     demo = !!on;
     if (demo) switched = null;
+    // The previous incident belongs to the previous cause: a simulated one must
+    // not survive into a real measurement, or the other way round.
+    remedy.drop("slow");
     resetMeasurements();
     render();
     measureSpeed();

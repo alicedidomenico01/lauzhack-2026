@@ -243,7 +243,21 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     quietUntil.delete(issueId);
   }
 
+  // The condition was artificial and just ended (a demo toggle). Close the
+  // incident without pretending it recovered, and without a banner.
+  function drop(key) {
+    const issueId = idOf(key);
+    const inc = open.get(issueId);
+    if (inc) {
+      if (inc.banner && !inc.banner.decided) inc.banner.dismiss();
+      update(inc, { status: "no_action", note: "demo stopped", outcome: "No action taken" });
+      open.delete(issueId);
+      onIncident?.(issueId.slice(section.length + 1), false);
+    }
+    quietUntil.delete(issueId);
+  }
+
   const isOpen = (key) => open.has(idOf(key));
 
-  return { raise, clear, isOpen, waitFor, forget };
+  return { raise, clear, isOpen, waitFor, forget, drop };
 }
