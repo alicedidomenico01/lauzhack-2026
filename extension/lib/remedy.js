@@ -146,6 +146,7 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
       seconds: policy.seconds,
       mode: userInitiated ? "auto" : policy.mode,
       simulated: issue.simulated,
+      execution: policy.execution,
     });
     if (userInitiated) inc.banner.applyNow();
 

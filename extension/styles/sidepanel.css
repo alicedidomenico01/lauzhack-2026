@@ -451,6 +451,10 @@ button.ghost:hover { border-color: var(--accent); color: var(--accent); }
 .action-close:hover { color: var(--text); background: #232b37; }
 .action-kicker { margin: 0; color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
 .action-banner.done .action-kicker, .action-banner.working .action-kicker { display: none; }
+.action-tag.exec.real { color: var(--ok); border-color: rgba(53, 200, 138, 0.45); }
+.action-tag.exec.simulated { color: var(--warn); border-color: rgba(232, 178, 60, 0.45); }
+.action-tag.demo { color: var(--muted); }
+
 .action-tag {
   display: inline-block;
   margin-left: 4px;

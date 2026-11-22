@@ -38,7 +38,7 @@ function el(tag, cls, html) {
 const AUTO_DISMISS_MS = 10000;
 const INFO_DISMISS_MS = 5000; // a suggestion has nothing to answer, so it leaves
 
-export function proposeAction({ section, title, detail, mode = "auto", simulated = false }) {
+export function proposeAction({ section, title, detail, mode = "auto", simulated = false, execution = null }) {
   const isInfo = mode === "info";
   let resolveChoice;
   const handle = {
@@ -103,8 +103,17 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
         ? `IT can fix this · ${section}`
         : `IT suggests a fix · ${section}`
   );
+  // Two different facts, two different labels: what the fix will do, and
+  // whether the failure itself was staged for the demo.
+  if (execution && !isInfo) {
+    const tag = el("span", `action-tag exec ${execution}`, execution);
+    tag.title = execution === "real"
+      ? "The fix runs on this device"
+      : "The fix only goes through the motions and changes nothing";
+    kicker.append(" ", tag);
+  }
   if (simulated) {
-    const tag = el("span", "action-tag", "simulated");
+    const tag = el("span", "action-tag demo", "demo");
     tag.title = "This failure was triggered on purpose from the panel";
     kicker.append(" ", tag);
   }
@@ -161,19 +170,20 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
     timer = setTimeout(() => decide("timeout"), ms);
   };
 
-  node.append(icon, body, buttons, progress);
+  node.append(icon, body, buttons);
+  if (isInfo) node.append(progress);
   if (close) node.append(close);
   stack().append(node);
 
   Object.assign(handle, { node, icon, titleEl, detailEl, buttons });
 
-  {
-    startTimer(isInfo ? INFO_DISMISS_MS : AUTO_DISMISS_MS);
+  if (isInfo) {
+    startTimer(INFO_DISMISS_MS);
     // Reading it should stop the clock.
     node.addEventListener("mouseenter", stopTimer);
     node.addEventListener("focusin", stopTimer);
     const resume = () => {
-      if (!handle.decided) startTimer(isInfo ? INFO_DISMISS_MS : AUTO_DISMISS_MS / 2);
+      if (!handle.decided) startTimer(INFO_DISMISS_MS);
     };
     node.addEventListener("mouseleave", resume);
     node.addEventListener("focusout", resume);
