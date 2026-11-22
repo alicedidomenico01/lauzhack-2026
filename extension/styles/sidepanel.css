@@ -426,6 +426,29 @@ button.ghost:hover { border-color: var(--accent); color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .action-body { min-width: 0; }
+
+.action-banner.info .action-body { padding-right: 20px; }
+
+.action-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.action-close:hover { color: var(--text); background: #232b37; }
 .action-kicker { margin: 0; color: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
 .action-banner.done .action-kicker, .action-banner.working .action-kicker { display: none; }
 .action-tag {

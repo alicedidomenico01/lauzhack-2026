@@ -116,6 +116,19 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
 
   body.append(kicker, titleEl, detailEl);
 
+  // A suggestion has no Confirm/Reject, so it needs its own way out.
+  let close = null;
+  if (isInfo) {
+    close = el("button", "action-close", "\u00d7");
+    close.type = "button";
+    close.setAttribute("aria-label", "Dismiss suggestion");
+    close.title = "Dismiss";
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handle.dismiss();
+    });
+  }
+
   const buttons = el("div", "action-buttons");
   if (!isInfo) {
     const yes = el("button", "action-yes", mode === "auto" ? "Confirm" : "Fix it");
@@ -149,6 +162,7 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
   };
 
   node.append(icon, body, buttons, progress);
+  if (close) node.append(close);
   stack().append(node);
 
   Object.assign(handle, { node, icon, titleEl, detailEl, buttons });
