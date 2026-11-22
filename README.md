@@ -110,7 +110,7 @@ the same as no alert. Only a result ("fixed") fades on its own.
 | Slow or no connection | Suggest switching network (no action applied) | none |
 | Microphone sends no sound | Restore the microphone (input volume) | real via helper |
 | System mic dead, another works | Make the working one the system default | real via helper |
-| Voice too quiet / clipping | Input volume up or down | real via helper |
+| Voice too quiet / clipping | Input volume up or down | real via helper, **report only by default** so it never interrupts |
 | Camera frozen | Restart the camera stream | real, inside the panel |
 | Camera black | Report only: shutter or cover | none |
 | CPU overloaded / memory full | Quit the top app, never Chrome or system apps | helper, simulated by default |

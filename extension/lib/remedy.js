@@ -228,6 +228,9 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
       if (inc.banner && !inc.banner.decided) {
         inc.banner.done("ok", "Back to normal.", "The problem cleared on its own.");
       }
+      // A report-only problem that comes and goes should not open a row every
+      // time it flaps.
+      if (inc.passive) quietUntil.set(issueId, Date.now() + 60000);
       done(issueId, inc);
     } else if (inc.state === "detected") {
       if (inc.banner && !inc.banner.decided) inc.banner.dismiss();

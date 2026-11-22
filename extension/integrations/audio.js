@@ -21,8 +21,11 @@ const SPEECH_MIN_DB = -60;
 const SPEECH_RUN = 6; // ...for ~100 ms in a row, so key clicks and bumps do not count
 const QUIET_DB = -48; // voice peaks below this are hard to hear
 const NOISY_DB = -45; // a background this loud is heard by everyone
-const CLIP = 0.985;
-const CLIP_FRAMES = 3; // clipped frames within the window before we warn
+const CLIP = 0.995;
+// A single loud sample is not clipping: a frame counts only when a visible
+// share of its samples sit at full scale, and we need several such frames.
+const CLIP_SAMPLES = 40;
+const CLIP_FRAMES = 12;
 const NUDGE_MS = 6000;
 const WINDOW_MS = 5000;
 
@@ -138,7 +141,7 @@ export function mountAudio(root, api) {
     const rms = Math.sqrt(sum / buf.length);
     return {
       db: rms === 0 ? -100 : Math.max(-100, 20 * Math.log10(rms)),
-      clip: clipped >= 3,
+      clip: clipped >= CLIP_SAMPLES,
     };
   }
 
