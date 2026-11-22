@@ -69,7 +69,10 @@ export function createRemedy(section, sectionLabel, { onIncident } = {}) {
     // the dedupe, and forgetting it here re-created one banner per tick.
     if (issue.simulated && !userInitiated) {
       const current = open.get(issueId);
-      if (!current || current.banner?.decided) forget(issue.key);
+      // A suggestion that was closed by hand is still the same open problem:
+      // forgetting it here made the banner come back on the next tick.
+      const settled = current?.banner?.decided && !issue.suggestOnly;
+      if (!current || settled) forget(issue.key);
       quietUntil.delete(issueId);
     }
 

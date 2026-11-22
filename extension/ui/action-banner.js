@@ -36,6 +36,7 @@ function el(tag, cls, html) {
 // `mode: "info"` has no decision to make: it is a suggestion, not an offer.
 // Nothing to confirm, nothing to reject, so it shows no buttons at all.
 const AUTO_DISMISS_MS = 10000;
+const INFO_DISMISS_MS = 5000; // a suggestion has nothing to answer, so it leaves
 
 export function proposeAction({ section, title, detail, mode = "auto", simulated = false }) {
   const isInfo = mode === "info";
@@ -152,7 +153,6 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
     bar.style.width = `${bar.getBoundingClientRect().width}px`;
   };
   const startTimer = (ms) => {
-    if (isInfo) return;
     stopTimer();
     requestAnimationFrame(() => {
       bar.style.transition = `width ${ms}ms linear`;
@@ -167,17 +167,16 @@ export function proposeAction({ section, title, detail, mode = "auto", simulated
 
   Object.assign(handle, { node, icon, titleEl, detailEl, buttons });
 
-  if (!isInfo) {
-    startTimer(AUTO_DISMISS_MS);
+  {
+    startTimer(isInfo ? INFO_DISMISS_MS : AUTO_DISMISS_MS);
     // Reading it should stop the clock.
     node.addEventListener("mouseenter", stopTimer);
     node.addEventListener("focusin", stopTimer);
-    node.addEventListener("mouseleave", () => {
-      if (!handle.decided) startTimer(AUTO_DISMISS_MS / 2);
-    });
-    node.addEventListener("focusout", () => {
-      if (!handle.decided) startTimer(AUTO_DISMISS_MS / 2);
-    });
+    const resume = () => {
+      if (!handle.decided) startTimer(isInfo ? INFO_DISMISS_MS : AUTO_DISMISS_MS / 2);
+    };
+    node.addEventListener("mouseleave", resume);
+    node.addEventListener("focusout", resume);
   }
 
   return handle;
