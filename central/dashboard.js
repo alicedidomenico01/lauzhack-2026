@@ -441,9 +441,21 @@ function renderPolicies() {
     mode.dataset.field = "mode";
 
     // Execution belongs to the action, it is not a setting: shown, not editable.
+    // When a mode applies nothing, there is nothing to execute.
     const execution = el("td", "");
-    const execLevel = policy.execution === "real" ? "ok" : "neutral";
-    execution.append(el("span", `badge ${execLevel}`, policy.execution));
+    const paintExecution = () => {
+      const passive = mode.value === "off" || mode.value === "suggest";
+      execution.replaceChildren();
+      if (passive) {
+        const none = el("span", "badge neutral", "none");
+        none.title = "No action is applied for this failure";
+        execution.append(none);
+        return;
+      }
+      const level = policy.execution === "real" ? "ok" : "neutral";
+      execution.append(el("span", `badge ${level}`, policy.execution));
+    };
+    mode.addEventListener("change", paintExecution);
 
     const ref = el("input");
     ref.type = "text";
@@ -467,6 +479,7 @@ function renderPolicies() {
     tr.append(failure, el("td", "", policy.action || "-"), el("td", ""), execution, el("td", ""), params);
     tr.children[2].append(mode);
     tr.children[4].append(ref);
+    paintExecution();
     body.append(tr);
   }
   table.append(body);
